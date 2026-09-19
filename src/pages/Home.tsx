@@ -282,7 +282,7 @@ function Home() {
 
               <div className="border-l border-white/10 pl-5">
                 <p className="text-2xl font-black sm:text-3xl text-[#ff6a00]">
-                  ★★★★★
+                  ★★★★
                 </p>
 
                 <p className="mt-1 text-[9px] font-bold uppercase tracking-widest text-white/35 sm:text-[10px]">
