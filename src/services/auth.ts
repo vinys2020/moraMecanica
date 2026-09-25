@@ -35,6 +35,7 @@ export async function obtenerDatosUsuario(
   uid: string
 ): Promise<UserData | null> {
   const userRef = doc(db, 'usuarios', uid)
+
   const userSnapshot = await getDoc(userRef)
 
   if (!userSnapshot.exists()) {
@@ -48,16 +49,16 @@ export async function obtenerDatosUsuario(
   const data = userSnapshot.data()
 
   return {
-    uid: data.uid || uid,
+    uid: data.uid ?? uid,
     email: data.email ?? null,
     rol: data.rol ?? null,
     nombre: data.nombre ?? '',
-    activo: data.activo ?? false,
+    activo: data.activo === true,
   }
 }
 
 /* =========================================================
-   REGISTRO
+   REGISTRO CON EMAIL
 ========================================================= */
 
 export async function registerWithEmail(
@@ -69,6 +70,12 @@ export async function registerWithEmail(
   rol: UserRole
   activo: boolean
 }> {
+  console.log('📝 Iniciando registro...')
+
+  /* -------------------------------------------------------
+     CREAR CUENTA EN FIREBASE AUTH
+  ------------------------------------------------------- */
+
   const userCredential =
     await createUserWithEmailAndPassword(
       auth,
@@ -78,23 +85,81 @@ export async function registerWithEmail(
 
   const user = userCredential.user
 
+  console.log(
+    '✅ Usuario creado en Firebase Auth:',
+    user.uid
+  )
+
+  /* -------------------------------------------------------
+     GUARDAR NOMBRE EN FIREBASE AUTH
+  ------------------------------------------------------- */
+
   await updateProfile(user, {
     displayName: nombre,
   })
 
-  await setDoc(doc(db, 'usuarios', user.uid), {
+  /* -------------------------------------------------------
+     CREAR DOCUMENTO EN FIRESTORE
+  ------------------------------------------------------- */
+
+  const userRef = doc(
+    db,
+    'usuarios',
+    user.uid
+  )
+
+  const userData = {
     uid: user.uid,
     email: user.email,
-    nombre,
-    rol: 'cliente',
-    activo: false,
-    creadoEn: serverTimestamp(),
-  })
+    nombre: nombre,
+    rol: 'cliente' as UserRole,
 
-  // Firebase inicia sesión automáticamente
-  // después de crear la cuenta.
-  // La cerramos porque necesita aprobación.
+    /*
+     * IMPORTANTE:
+     * El usuario queda pendiente hasta que
+     * un administrador lo apruebe.
+     */
+    activo: false,
+
+    creadoEn: serverTimestamp(),
+  }
+
+  console.log(
+    '💾 Guardando usuario en Firestore:',
+    userData
+  )
+
+  await setDoc(
+    userRef,
+    userData
+  )
+
+  console.log(
+    '✅ Documento creado correctamente:',
+    `usuarios/${user.uid}`
+  )
+
+  /* -------------------------------------------------------
+     CERRAR SESIÓN
+  ------------------------------------------------------- */
+
+  /*
+   * Firebase inicia sesión automáticamente
+   * después de crear una cuenta.
+   *
+   * Como la cuenta todavía necesita aprobación,
+   * cerramos la sesión.
+   */
+
   await signOut(auth)
+
+  console.log(
+    '🔒 Sesión cerrada. Usuario pendiente de aprobación.'
+  )
+
+  /* -------------------------------------------------------
+     RESULTADO
+  ------------------------------------------------------- */
 
   return {
     user,
@@ -104,8 +169,9 @@ export async function registerWithEmail(
 }
 
 /* =========================================================
-   LOGIN EMAIL
+   LOGIN CON EMAIL
 ========================================================= */
+
 export async function loginWithEmail(
   email: string,
   pass: string
@@ -114,6 +180,15 @@ export async function loginWithEmail(
   rol: UserRole | null
   activo: boolean
 }> {
+  console.log(
+    '🔑 Intentando iniciar sesión:',
+    email
+  )
+
+  /* -------------------------------------------------------
+     LOGIN FIREBASE AUTH
+  ------------------------------------------------------- */
+
   const userCredential =
     await signInWithEmailAndPassword(
       auth,
@@ -123,53 +198,88 @@ export async function loginWithEmail(
 
   const user = userCredential.user
 
+  console.log(
+    '✅ Firebase Auth autenticó:',
+    user.uid
+  )
+
+  /* -------------------------------------------------------
+     OBTENER DOCUMENTO FIRESTORE
+  ------------------------------------------------------- */
+
   const userData =
     await obtenerDatosUsuario(user.uid)
 
   if (!userData) {
+    console.error(
+      '❌ El usuario existe en Auth pero no tiene documento en Firestore.'
+    )
+
     await signOut(auth)
-    throw new Error('USER_DATA_NOT_FOUND')
+
+    throw new Error(
+      'USER_DATA_NOT_FOUND'
+    )
   }
 
-  /*
-   * El rol debe existir y ser válido.
-   */
+  console.log(
+    '👤 Datos encontrados en Firestore:',
+    userData
+  )
+
+  /* -------------------------------------------------------
+     VALIDAR ROL
+  ------------------------------------------------------- */
 
   if (
     userData.rol !== 'admin' &&
     userData.rol !== 'empleado' &&
     userData.rol !== 'cliente'
   ) {
+    console.error(
+      '❌ Rol inválido:',
+      userData.rol
+    )
+
     await signOut(auth)
-    throw new Error('USER_ROLE_INVALID')
+
+    throw new Error(
+      'USER_ROLE_INVALID'
+    )
   }
 
-  /*
-   * IMPORTANTE:
-   * Firestore debe tener:
-   *
-   * activo: true
-   *
-   * como booleano.
-   */
+  /* -------------------------------------------------------
+     COMPROBAR APROBACIÓN
+  ------------------------------------------------------- */
 
   const activo =
     userData.activo === true
 
-  console.log('LOGIN FIRESTORE:', {
-    uid: user.uid,
-    rol: userData.rol,
-    activo: userData.activo,
-    activoCalculado: activo,
-  })
+  console.log(
+    '🔐 ESTADO DE CUENTA:',
+    {
+      uid: user.uid,
+      rol: userData.rol,
+      activoFirestore: userData.activo,
+      activoCalculado: activo,
+    }
+  )
 
   /*
-   * NO cerramos sesión acá.
+   * IMPORTANTE:
    *
-   * Login.tsx decide qué hacer:
+   * NO hacemos signOut acá cuando activo === false.
    *
-   * activo true  → dashboard
-   * activo false → registro-pendiente
+   * Login.tsx recibe:
+   *
+   * activo: false
+   *
+   * y se encarga de enviarlo a:
+   *
+   * /registro-pendiente
+   *
+   * Esto permite mantener todo el flujo
+   * centralizado.
    */
 
   return {
@@ -179,9 +289,8 @@ export async function loginWithEmail(
   }
 }
 
-
 /* =========================================================
-   LOGIN GOOGLE
+   LOGIN CON GOOGLE
 ========================================================= */
 
 export async function loginWithGoogle(): Promise<{
@@ -189,7 +298,12 @@ export async function loginWithGoogle(): Promise<{
   rol: UserRole | null
   activo: boolean
 }> {
-  const provider = new GoogleAuthProvider()
+  console.log(
+    '🔑 Iniciando sesión con Google...'
+  )
+
+  const provider =
+    new GoogleAuthProvider()
 
   const userCredential =
     await signInWithPopup(
@@ -197,28 +311,86 @@ export async function loginWithGoogle(): Promise<{
       provider
     )
 
-  const user = userCredential.user
+  const user =
+    userCredential.user
 
-  const userData = await obtenerDatosUsuario(
+  console.log(
+    '✅ Google autenticó:',
     user.uid
   )
 
+  /* -------------------------------------------------------
+     OBTENER DATOS FIRESTORE
+  ------------------------------------------------------- */
+
+  const userData =
+    await obtenerDatosUsuario(
+      user.uid
+    )
+
+  /* -------------------------------------------------------
+     USUARIO SIN DOCUMENTO
+  ------------------------------------------------------- */
+
   if (!userData) {
+    console.error(
+      '❌ Usuario de Google sin documento en Firestore.'
+    )
+
     await signOut(auth)
 
-    throw new Error('USER_DATA_NOT_FOUND')
+    throw new Error(
+      'USER_DATA_NOT_FOUND'
+    )
   }
 
-  if (userData.activo !== true) {
+  /* -------------------------------------------------------
+     VALIDAR ROL
+  ------------------------------------------------------- */
+
+  if (
+    userData.rol !== 'admin' &&
+    userData.rol !== 'empleado' &&
+    userData.rol !== 'cliente'
+  ) {
     await signOut(auth)
 
-    throw new Error('USER_NOT_ACTIVE')
+    throw new Error(
+      'USER_ROLE_INVALID'
+    )
   }
+
+  /* -------------------------------------------------------
+     COMPROBAR APROBACIÓN
+  ------------------------------------------------------- */
+
+  const activo =
+    userData.activo === true
+
+  console.log(
+    '🔐 GOOGLE LOGIN:',
+    {
+      uid: user.uid,
+      rol: userData.rol,
+      activo,
+    }
+  )
+
+  /*
+   * Igual que con email:
+   *
+   * activo === false
+   * → Login.tsx debe mandar a
+   *   /registro-pendiente
+   *
+   * activo === true
+   * → puede entrar al dashboard.
+   */
 
   return {
     user,
     rol: userData.rol,
-    activo: true,
+    activo,
   }
 }
 
@@ -227,5 +399,13 @@ export async function loginWithGoogle(): Promise<{
 ========================================================= */
 
 export async function logout(): Promise<void> {
+  console.log(
+    '🔒 Cerrando sesión...'
+  )
+
   await signOut(auth)
+
+  console.log(
+    '✅ Sesión cerrada.'
+  )
 }

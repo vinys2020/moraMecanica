@@ -32,6 +32,7 @@ import {
 import AdminLayout from "../components/AdminLayout";
 import ReciboServicio from "../components/ReciboServicio";
 import { db } from "../config/firebase";
+import { generarYDescargarPDF } from "../utils/pdfHelper";
 
 type ServiceStatus =
     | "Pendiente"
@@ -1125,6 +1126,62 @@ const Facturacion = () => {
             setShowReceipt(
                 true
             );
+
+            // Generar PDF automáticamente si hay pago
+            if (payment && montoPagado > 0) {
+                try {
+                    await generarYDescargarPDF({
+                        tipo: "Recibo",
+                        numero: reciboNumero,
+                        fecha: payment.fecha || getTodayInputDate(),
+                        cliente: {
+                            nombre: service.clienteNombre,
+                        },
+                        vehiculo: {
+                            marca: service.vehiculoNombre.split(" ")[0],
+                            modelo: service.vehiculoNombre
+                                .split(" ")
+                                .slice(1)
+                                .join(" ") || "—",
+                            patente: service.patente,
+                        },
+                        items: [
+                            {
+                                type: "Servicio",
+                                name: service.tipo,
+                                quantity: 1,
+                                price: service.precio,
+                            },
+                        ],
+                        laborCost: service.precio,
+                        partsCost: 0,
+                        total: service.precio,
+                        observaciones: payment.observaciones || service.observaciones,
+                        adelanto:
+                            saldoRestante >
+                            0
+                                ? {
+                                      importe:
+                                          montoPagado,
+                                      medioPago:
+                                          payment.medioPago,
+                                      fecha:
+                                          payment.fecha ||
+                                          getTodayInputDate(),
+                                  }
+                                : undefined,
+                        saldoPendiente:
+                            saldoRestante,
+                        nombrePDF: `Recibo_${reciboNumero}_${service.clienteNombre.replace(/\s+/g, "_")}.pdf`,
+                    });
+                } catch (pdfError) {
+                    console.error(
+                        "Error descargando PDF:",
+                        pdfError
+                    );
+                    // No bloqueamos el flujo si falla el PDF
+                }
+            }
         } catch (err) {
             console.error(
                 "Error generando recibo:",
@@ -1668,7 +1725,7 @@ const Facturacion = () => {
                                         )
                                     }
                                     placeholder="Buscar servicio..."
-                                    className="w-full rounded-xl border border-slate-200 bg-white py-2.5 pl-10 pr-4 text-sm outline-none placeholder:text-slate-400 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 md:w-64"
+                                    className="text-slate-700 w-full rounded-xl border border-slate-200 bg-white py-2.5 pl-10 pr-4 text-sm outline-none placeholder:text-slate-400 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 md:w-64"
                                 />
                             </div>
 

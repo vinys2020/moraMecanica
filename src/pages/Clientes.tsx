@@ -28,6 +28,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import AdminLayout from "../components/AdminLayout";
 import { db } from "../config/firebase";
+import ModalGeneral from "../components/ModalGeneral";
 
 type UserRole = "admin" | "empleado" | "cliente";
 
@@ -70,6 +71,9 @@ const Clientes = () => {
 
     const [selectedUser, setSelectedUser] =
         useState<UserData | null>(null);
+
+    const [showGeneralModal, setShowGeneralModal] =
+    useState(false);
 
     const [showDetailsModal, setShowDetailsModal] =
         useState(false);
@@ -963,25 +967,36 @@ const Clientes = () => {
                                                             </button>
                                                         </td>
 
-                                                        {/* ACTIONS */}
-                                                        <td className="px-5 py-4">
-                                                            <div className="flex items-center justify-end gap-1">
-                                                                <button
-                                                                    onClick={() =>
-                                                                        openDetails(
-                                                                            client
-                                                                        )
-                                                                    }
-                                                                    className="rounded-lg p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
-                                                                    title="Ver cliente"
-                                                                >
-                                                                    <Edit3
-                                                                        size={18}
-                                                                    />
-                                                                </button>
+                                 {/* ACTIONS */}
+<td className="px-5 py-4">
+    <div className="flex items-center justify-end gap-1">
 
-                                                            </div>
-                                                        </td>
+        {/* Ver / editar cliente - EXISTENTE */}
+        <button
+            onClick={() =>
+                openDetails(client)
+            }
+            className="rounded-lg p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+            title="Ver cliente"
+        >
+            <Edit3 size={18} />
+        </button>
+
+        {/* Modal General - NUEVO */}
+{/* Modal General */}
+<button
+    onClick={() => {
+        setSelectedUser(client);
+        setShowGeneralModal(true);
+    }}
+    className="rounded-lg p-2 text-slate-400 transition hover:bg-blue-50 hover:text-blue-600"
+    title="Configurar cliente"
+>
+    <UserRound size={18} />
+</button>
+
+    </div>
+</td>
                                                     </tr>
                                                 );
                                             }
@@ -1730,6 +1745,25 @@ const Clientes = () => {
                         </div>
                     </div>
                 )}
+
+                {/* ========================================================= */}
+{/* MODAL GENERAL */}
+{/* ========================================================= */}
+
+{showGeneralModal &&
+    selectedUser && (
+        <ModalGeneral
+            selectedUser={selectedUser}
+            vehicles={vehicles}
+            onClose={() =>
+                setShowGeneralModal(false)
+            }
+            onSaved={async () => {
+                await cargarUsuarios();
+                await cargarVehiculos();
+            }}
+        />
+    )}
         </AdminLayout>
     );
 };

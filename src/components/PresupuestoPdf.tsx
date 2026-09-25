@@ -10,9 +10,9 @@ import {
    TIPOS
 ========================================================= */
 
-interface PresupuestoPdfProps {
+interface PdfProps {
 
-    numeroPresupuesto: string;
+    numero: string;
 
     selectedClient?: {
         nombre: string;
@@ -49,6 +49,14 @@ interface PresupuestoPdfProps {
     formatDate: (
         value: string
     ) => string;
+
+    advancePayment?: {
+        importe: number;
+        medioPago: string;
+        fecha: string;
+    } | null;
+
+    remainingBalance?: number;
 }
 
 
@@ -96,8 +104,8 @@ const WHITE = rgb(
    FUNCIÓN PRINCIPAL
 ========================================================= */
 
-const PresupuestoPdf = async ({
-    numeroPresupuesto,
+const Pdf = async ({
+    numero,
     selectedClient,
     selectedVehicle,
     budgetItems,
@@ -108,7 +116,9 @@ const PresupuestoPdf = async ({
     partsPdf,
     formatCurrency,
     formatDate,
-}: PresupuestoPdfProps) => {
+    advancePayment,
+    remainingBalance,
+}: PdfProps) => {
 
     /* =====================================================
        CREAR PDF FINAL
@@ -250,7 +260,7 @@ const PresupuestoPdf = async ({
 
 
         drawText(
-            "PRESUPUESTO",
+            "",
             PAGE_WIDTH - 160,
             PAGE_HEIGHT - 47,
             12,
@@ -379,11 +389,11 @@ const PresupuestoPdf = async ({
 
 
     /* =====================================================
-       DATOS DEL PRESUPUESTO
+       DATOS DEL 
     ===================================================== */
 
     drawText(
-        `Presupuesto: ${numeroPresupuesto}`,
+        `: ${numero}`,
         MARGIN_X,
         y,
         9,
@@ -500,7 +510,7 @@ const PresupuestoPdf = async ({
     ===================================================== */
 
     drawText(
-        "DETALLE DEL PRESUPUESTO",
+        "DETALLE DEL ",
         MARGIN_X,
         y,
         9,
@@ -550,7 +560,7 @@ const PresupuestoPdf = async ({
                     createNewPage();
 
                     drawText(
-                        "DETALLE DEL PRESUPUESTO",
+                        "DETALLE DEL ",
                         MARGIN_X,
                         y,
                         9,
@@ -769,6 +779,94 @@ const PresupuestoPdf = async ({
 
 
     /* =====================================================
+       ADELANTO Y SALDO
+    ===================================================== */
+
+    if (advancePayment && advancePayment.importe > 0) {
+        y -= 30;
+
+        drawText(
+            "ADELANTO RECIBIDO",
+            345,
+            y,
+            9,
+            regularFont,
+            DARK_GRAY
+        );
+
+        drawText(
+            formatCurrency(
+                advancePayment.importe
+            ),
+            485,
+            y,
+            9,
+            boldFont,
+            rgb(0.16, 0.7, 0.38)
+        );
+
+        y -= 18;
+
+        drawText(
+            `Medio: ${advancePayment.medioPago}`,
+            345,
+            y,
+            7.5,
+            regularFont,
+            GRAY
+        );
+
+        drawText(
+            `Fecha: ${formatDate(
+                advancePayment.fecha
+            )}`,
+            460,
+            y,
+            7.5,
+            regularFont,
+            GRAY
+        );
+
+        y -= 18;
+
+        drawLine(
+            y,
+            345,
+            PAGE_WIDTH - MARGIN_X,
+            1,
+            rgb(0.92, 0.92, 0.92)
+        );
+
+        y -= 20;
+
+        drawText(
+            "SALDO PENDIENTE",
+            345,
+            y,
+            10,
+            boldFont,
+            rgb(0.85, 0.2, 0.2)
+        );
+
+        const balanceAmount =
+            remainingBalance !== undefined
+                ? remainingBalance
+                : budgetTotal - advancePayment.importe;
+
+        drawText(
+            formatCurrency(
+                Math.max(balanceAmount, 0)
+            ),
+            475,
+            y,
+            12,
+            boldFont,
+            rgb(0.85, 0.2, 0.2)
+        );
+    }
+
+
+    /* =====================================================
        OBSERVACIONES
     ===================================================== */
 
@@ -906,7 +1004,7 @@ const PresupuestoPdf = async ({
 
 
     drawText(
-        "Presupuesto sujeto a vigencia indicada.",
+        " sujeto a vigencia indicada.",
         350,
         28,
         7,
@@ -923,5 +1021,5 @@ const PresupuestoPdf = async ({
 };
 
 
-export default PresupuestoPdf;
+export default Pdf;
 

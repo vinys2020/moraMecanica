@@ -833,7 +833,7 @@ const Presupuestos = () => {
 
                 const presupuestoPdf =
                     await PresupuestoPdf({
-                        numeroPresupuesto,
+                        numero: numeroPresupuesto,
 
                         selectedClient,
 
@@ -1483,7 +1483,7 @@ const blob =
                                         )
                                     }
                                     placeholder="Buscar presupuesto..."
-                                    className="w-full rounded-xl border border-slate-200 bg-white py-2.5 pl-10 pr-4 text-sm outline-none transition placeholder:text-slate-400 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 md:w-64"
+                                    className="text-slate-700 w-full rounded-xl border border-slate-200 bg-white py-2.5 pl-10 pr-4 text-sm outline-none transition placeholder:text-slate-400 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 md:w-64"
                                 />
 
                             </div>
