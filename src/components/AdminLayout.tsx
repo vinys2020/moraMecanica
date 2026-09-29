@@ -7,7 +7,7 @@ import {
     LayoutDashboard,
     LogOut,
     Menu,
-    Package,
+    WalletCards,
     ShieldCheck,
     Users,
     Wrench,
@@ -23,14 +23,9 @@ interface AdminLayoutProps {
 
 const menuItems = [
     {
-        title: "Dashboard",
+        title: "Inicio",
         icon: LayoutDashboard,
         path: "/admin",
-    },
-    {
-        title: "Turnos",
-        icon: CalendarDays,
-        path: "/admin/turnos",
     },
     {
         title: "Clientes",
@@ -57,10 +52,15 @@ const menuItems = [
         icon: CircleDollarSign,
         path: "/admin/facturacion",
     },
-    {
-        title: "Inventario",
-        icon: Package,
-        path: "/admin/inventario",
+        {
+        title: "Turnos",
+        icon: CalendarDays,
+        path: "/admin/turnos",
+    },
+        {
+        title: "Balance",
+        icon: WalletCards,
+        path: "/admin/balance",
     },
 ];
 

@@ -15,13 +15,11 @@ import type { FormEvent } from 'react'
 
 import {
   Link,
-  useNavigate,
 } from 'react-router-dom'
 
 import { registerWithEmail } from '../services/auth'
 
 function Register() {
-  const navigate = useNavigate()
 
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
@@ -29,92 +27,122 @@ function Register() {
   const [confirmPassword, setConfirmPassword] = useState('')
 
   const [showPassword, setShowPassword] = useState(false)
-  const [showConfirmPassword, setShowConfirmPassword] =
-    useState(false)
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false)
 
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
-const handleSubmit = async (
-  e: FormEvent<HTMLFormElement>
-) => {
-  e.preventDefault()
+  const handleSubmit = async (
+    e: FormEvent<HTMLFormElement>
+  ) => {
+    e.preventDefault()
 
-  setError('')
+    if (loading) return
 
-  if (!name.trim()) {
-    setError('Ingresá tu nombre y apellido.')
-    return
-  }
+    setError('')
 
-  if (!email.trim()) {
-    setError('Ingresá tu correo electrónico.')
-    return
-  }
-
-  if (password.length < 6) {
-    setError(
-      'La contraseña debe tener al menos 6 caracteres.'
-    )
-    return
-  }
-
-  if (password !== confirmPassword) {
-    setError('Las contraseñas no coinciden.')
-    return
-  }
-
-  try {
-    setLoading(true)
-
-    await registerWithEmail(
-      name.trim(),
-      email.trim(),
-      password
-    )
-
-    // Usuario creado con activo: false.
-    // registerWithEmail ya cerró la sesión.
-    // Lo enviamos a la pantalla de espera.
-    navigate('/registro-pendiente', {
-      replace: true,
-    })
-
-  } catch (error: any) {
-    console.error(
-      'ERROR AL REGISTRAR USUARIO:',
-      error
-    )
-
-    switch (error?.code) {
-      case 'auth/email-already-in-use':
-        setError(
-          'Ya existe una cuenta registrada con ese correo.'
-        )
-        break
-
-      case 'auth/invalid-email':
-        setError(
-          'El correo electrónico no es válido.'
-        )
-        break
-
-      case 'auth/weak-password':
-        setError(
-          'La contraseña es demasiado débil.'
-        )
-        break
-
-      default:
-        setError(
-          'No pudimos crear tu cuenta. Intentá nuevamente.'
-        )
+    if (!name.trim()) {
+      setError('Ingresá tu nombre y apellido.')
+      return
     }
 
-  } finally {
-    setLoading(false)
+    if (!email.trim()) {
+      setError('Ingresá tu correo electrónico.')
+      return
+    }
+
+    if (password.length < 6) {
+      setError(
+        'La contraseña debe tener al menos 6 caracteres.'
+      )
+      return
+    }
+
+    if (password !== confirmPassword) {
+      setError('Las contraseñas no coinciden.')
+      return
+    }
+
+    try {
+      setLoading(true)
+
+      /*
+       * registerWithEmail:
+       *
+       * 1. Crea el usuario en Firebase Auth.
+       * 2. Crea usuarios/{uid} en Firestore.
+       * 3. Guarda activo: false.
+       * 4. NO cierra la sesión.
+       *
+       * Firebase mantiene al usuario autenticado.
+       */
+
+      const result = await registerWithEmail(
+        name.trim(),
+        email.trim(),
+        password
+      )
+
+      console.log(
+        '✅ Registro completado:',
+        {
+          uid: result.user.uid,
+          rol: result.rol,
+          activo: result.activo,
+        }
+      )
+
+      /*
+       * La cuenta queda pendiente de aprobación.
+       *
+       * El usuario sigue autenticado y
+       * RegistroPendiente escuchará en tiempo real
+       * usuarios/{uid}.
+       */
+
+window.location.replace('/registro-pendiente')
+
+    } catch (error: any) {
+      console.error(
+        '❌ ERROR AL REGISTRAR USUARIO:',
+        error
+      )
+
+      switch (error?.code) {
+        case 'auth/email-already-in-use':
+          setError(
+            'Ya existe una cuenta registrada con ese correo.'
+          )
+          break
+
+        case 'auth/invalid-email':
+          setError(
+            'El correo electrónico no es válido.'
+          )
+          break
+
+        case 'auth/weak-password':
+          setError(
+            'La contraseña debe tener al menos 6 caracteres.'
+          )
+          break
+
+        case 'auth/network-request-failed':
+          setError(
+            'No pudimos conectarnos con el servidor. Revisá tu conexión e intentá nuevamente.'
+          )
+          break
+
+        default:
+          setError(
+            'No pudimos crear tu cuenta. Intentá nuevamente.'
+          )
+      }
+
+    } finally {
+      setLoading(false)
+    }
   }
-}
 
   return (
     <main className="relative flex min-h-screen overflow-hidden bg-[#080808] text-white">
@@ -393,9 +421,7 @@ const handleSubmit = async (
                 <button
                   type="button"
                   onClick={() =>
-                    setShowPassword(
-                      !showPassword
-                    )
+                    setShowPassword(!showPassword)
                   }
                   disabled={loading}
                   className="absolute right-4 top-1/2 -translate-y-1/2 text-white/30 transition hover:text-[#ff6a00]"
@@ -438,9 +464,7 @@ const handleSubmit = async (
                   }
                   value={confirmPassword}
                   onChange={(e) =>
-                    setConfirmPassword(
-                      e.target.value
-                    )
+                    setConfirmPassword(e.target.value)
                   }
                   placeholder="••••••••"
                   autoComplete="new-password"

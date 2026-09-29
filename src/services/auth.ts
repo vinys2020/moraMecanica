@@ -151,11 +151,7 @@ export async function registerWithEmail(
    * cerramos la sesión.
    */
 
-  await signOut(auth)
 
-  console.log(
-    '🔒 Sesión cerrada. Usuario pendiente de aprobación.'
-  )
 
   /* -------------------------------------------------------
      RESULTADO

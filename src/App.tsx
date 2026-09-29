@@ -19,6 +19,8 @@ import Inventario from './pages/Inventario'
 import Register from './pages/Register'
 import RegistroPendiente from './pages/RegistroPendiente'
 import { useAuth } from './context/AuthContext'
+import ClienteRoute from './routes/ClienteRoute'
+import Balance from './pages/Balance'
 
 function App() {
   const { user, rol, loading } = useAuth()
@@ -123,6 +125,18 @@ function App() {
 />
 
         <Route
+  path="/admin/balance"
+  element={
+    user && rol === 'admin' ? (
+      <Balance />
+    ) : (
+      <Navigate to="/login" replace />
+    )
+  }
+/>
+
+
+        <Route
           path="/admin/servicios"
           element={
             user && rol === 'admin' ? (
@@ -186,6 +200,8 @@ function App() {
 />
 
 
+
+
         {/* EMPLEADO */}
 
         <Route
@@ -206,19 +222,16 @@ function App() {
 
         {/* CLIENTE */}
 
-        <Route
-          path="/cliente"
-          element={
-            user && rol === 'cliente' ? (
-              <ClientDashboard />
-            ) : (
-              <Navigate
-                to="/login"
-                replace
-              />
-            )
-          }
-        />
+{/* CLIENTE */}
+
+<Route
+  path="/cliente"
+  element={
+    <ClienteRoute>
+      <ClientDashboard />
+    </ClienteRoute>
+  }
+/>
 
 
 

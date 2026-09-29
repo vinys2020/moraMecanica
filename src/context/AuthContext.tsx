@@ -27,6 +27,7 @@ interface AuthContextType {
   user: FirebaseUser | null
   userData: UserData | null
   rol: UserRole | null
+  activo: boolean
   loading: boolean
 
   login: (
@@ -124,29 +125,29 @@ export function AuthProvider({
                SIN DOCUMENTO
             ------------------------- */
 
-            if (!data) {
-              await firebaseLogout()
+if (!data) {
+  console.warn(
+    `⚠️ No existe usuarios/${currentUser.uid} todavía.`
+  )
 
-              setUser(null)
-              setUserData(null)
-              setRol(null)
+  setUser(currentUser)
+  setUserData(null)
+  setRol(null)
 
-              return
-            }
+  return
+}
 
             /* -------------------------
                CUENTA INACTIVA
             ------------------------- */
 
-            if (data.activo !== true) {
-              await firebaseLogout()
+if (data.activo !== true) {
+  setUser(currentUser)
+  setUserData(data)
+  setRol(data.rol ?? null)
 
-              setUser(null)
-              setUserData(null)
-              setRol(null)
-
-              return
-            }
+  return
+}
 
             /* -------------------------
                CUENTA ACTIVA
@@ -274,16 +275,17 @@ export function AuthProvider({
   ========================================================= */
 
   return (
-    <AuthContext.Provider
-      value={{
-        user,
-        userData,
-        rol,
-        loading,
-        login,
-        logout,
-      }}
-    >
+<AuthContext.Provider
+  value={{
+    user,
+    userData,
+    rol,
+    activo: userData?.activo === true,
+    loading,
+    login,
+    logout,
+  }}
+>
       {children}
     </AuthContext.Provider>
   )

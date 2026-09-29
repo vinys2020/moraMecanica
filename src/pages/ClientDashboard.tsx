@@ -23,6 +23,7 @@ import {
 
 import { useAuth } from "../context/AuthContext";
 import { db } from "../config/firebase";
+import CalculadoraProximoService from "../components/CalculadoraProximoService";
 
 import {
     useEffect,
@@ -2093,102 +2094,258 @@ const availableAppointmentSlots =
     )}
 
 </section>
+
+
+{/* CALCULADORA DE PRÓXIMO SERVICE */}
+
+<div className="mb-8">
+    <CalculadoraProximoService />
+</div>
+
+{/* GRID */}
                         {/* HISTORIAL */}
 
                         <section className="rounded-3xl border border-white/[0.07] bg-[#101214] p-6 sm:p-7">
 
-                            <div className="flex items-center justify-between">
+    <div className="flex items-center justify-between">
 
-                                <div>
-                                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-white/30">
-                                        Historial
-                                    </p>
+        <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-white/30">
+                Historial
+            </p>
 
-                                    <h3 className="mt-1 text-xl font-semibold">
-                                        Últimos servicios
-                                    </h3>
-                                </div>
+            <h3 className="mt-1 text-xl font-semibold">
+                Últimos servicios
+            </h3>
+        </div>
 
-                                <span className="text-xs text-white/30">
-                                    {services.length} total
-                                </span>
+        <span className="text-xs text-white/30">
+            {services.length} total
+        </span>
+    </div>
+
+    {latestServices.length > 0 ? (
+        <div className="mt-6 space-y-3">
+
+            {latestServices.map((service) => (
+                <details
+                    key={service.id}
+                    className="group overflow-hidden rounded-2xl border border-white/[0.06] bg-white/[0.025]"
+                >
+
+                    {/* RESUMEN */}
+                    <summary className="cursor-pointer list-none p-4 [&::-webkit-details-marker]:hidden">
+
+                        <div className="flex items-start justify-between gap-4">
+
+                            <div className="min-w-0">
+
+                                <p className="text-sm font-semibold text-white">
+                                    {service.tipo ||
+                                        service.descripcion ||
+                                        "Servicio"}
+                                </p>
+
+                                <p className="mt-1 text-xs text-white/35">
+                                    {formatDate(service.fecha)}
+
+                                    {service.categoria &&
+                                        ` · ${service.categoria}`}
+                                </p>
+
                             </div>
 
-                            {latestServices.length > 0 ? (
-                                <div className="mt-6 space-y-2">
+                            <span
+                                className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-bold ${
+                                    service.estado ===
+                                    "Completado"
+                                        ? "bg-emerald-500/10 text-emerald-400"
+                                        : service.estado ===
+                                          "Cancelado"
+                                        ? "bg-red-500/10 text-red-400"
+                                        : "bg-orange-500/10 text-orange-400"
+                                }`}
+                            >
+                                {service.estado}
+                            </span>
 
-                                    {latestServices.map(
-                                        (service) => (
-                                            <div
-                                                key={
-                                                    service.id
-                                                }
-                                                className="rounded-2xl border border-white/[0.06] bg-white/[0.025] p-4"
-                                            >
-                                                <div className="flex items-start justify-between gap-4">
+                        </div>
 
-                                                    <div>
-                                                        <p className="text-sm font-semibold">
-                                                            {service.tipo ||
-                                                                service.descripcion ||
-                                                                "Servicio"}
-                                                        </p>
+                        <div className="mt-4 flex items-center justify-between gap-3">
 
-                                                        <p className="mt-1 text-xs text-white/35">
-                                                            {formatDate(
-                                                                service.fecha
-                                                            )}
-                                                            {service.categoria &&
-                                                                ` · ${service.categoria}`}
-                                                        </p>
-                                                    </div>
-
-                                                    <span
-                                                        className={`rounded-full px-2.5 py-1 text-[10px] font-bold ${
-                                                            service.estado ===
-                                                            "Completado"
-                                                                ? "bg-emerald-500/10 text-emerald-400"
-                                                                : service.estado ===
-                                                                  "Cancelado"
-                                                                ? "bg-red-500/10 text-red-400"
-                                                                : "bg-orange-500/10 text-orange-400"
-                                                        }`}
-                                                    >
-                                                        {
-                                                            service.estado
-                                                        }
-                                                    </span>
-                                                </div>
-
-                                                {service.descripcion && (
-                                                    <p className="mt-3 text-xs leading-5 text-white/40">
-                                                        {
-                                                            service.descripcion
-                                                        }
-                                                    </p>
-                                                )}
-
-                                                {service.precio >
-                                                    0 && (
-                                                    <p className="mt-3 text-sm font-semibold text-white/70">
-                                                        {formatCurrency(
-                                                            service.precio
-                                                        )}
-                                                    </p>
-                                                )}
-                                            </div>
-                                        )
+                            {service.precio > 0 ? (
+                                <p className="text-sm font-semibold text-white/70">
+                                    {formatCurrency(
+                                        service.precio
                                     )}
-                                </div>
+                                </p>
                             ) : (
-                                <EmptyState
-                                    icon={
-                                        <Wrench size={28} />
-                                    }
-                                    text="Todavía no hay servicios registrados."
-                                />
+                                <span />
                             )}
-                        </section>
+
+                            <span className="flex items-center gap-2 text-xs font-medium text-white/35 transition group-open:text-[#ff6a00]">
+                                <span className="group-open:hidden">
+                                    Ver detalles
+                                </span>
+
+                                <span className="hidden group-open:inline">
+                                    Ocultar detalles
+                                </span>
+
+                                <span className="text-base transition-transform duration-300 group-open:rotate-180">
+                                    ↓
+                                </span>
+                            </span>
+
+                        </div>
+
+                    </summary>
+
+                    {/* DETALLES */}
+                    <div className="border-t border-white/[0.06] bg-black/10 p-4">
+
+                        <div className="mb-4">
+
+                            <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[#ff6a00]/70">
+                                Detalle del servicio
+                            </p>
+
+                            <p className="mt-1 text-sm font-semibold text-white">
+                                Información del mantenimiento
+                            </p>
+
+                        </div>
+
+                        <div className="grid gap-3 sm:grid-cols-2">
+
+                            {/* Tipo */}
+                            <div className="rounded-xl border border-white/[0.05] bg-white/[0.02] p-3">
+
+                                <p className="text-[10px] uppercase tracking-wider text-white/25">
+                                    Tipo de servicio
+                                </p>
+
+                                <p className="mt-1 text-sm text-white/70">
+                                    {service.tipo ||
+                                        "No especificado"}
+                                </p>
+
+                            </div>
+
+                            {/* Categoría */}
+                            <div className="rounded-xl border border-white/[0.05] bg-white/[0.02] p-3">
+
+                                <p className="text-[10px] uppercase tracking-wider text-white/25">
+                                    Categoría
+                                </p>
+
+                                <p className="mt-1 text-sm text-white/70">
+                                    {service.categoria ||
+                                        "No especificada"}
+                                </p>
+
+                            </div>
+
+                            {/* Fecha */}
+                            <div className="rounded-xl border border-white/[0.05] bg-white/[0.02] p-3">
+
+                                <p className="text-[10px] uppercase tracking-wider text-white/25">
+                                    Fecha
+                                </p>
+
+                                <p className="mt-1 text-sm text-white/70">
+                                    {formatDate(
+                                        service.fecha
+                                    )}
+                                </p>
+
+                            </div>
+
+                            {/* Estado */}
+                            <div className="rounded-xl border border-white/[0.05] bg-white/[0.02] p-3">
+
+                                <p className="text-[10px] uppercase tracking-wider text-white/25">
+                                    Estado
+                                </p>
+
+                                <p
+                                    className={`mt-1 text-sm font-medium ${
+                                        service.estado ===
+                                        "Completado"
+                                            ? "text-emerald-400"
+                                            : service.estado ===
+                                              "Cancelado"
+                                            ? "text-red-400"
+                                            : "text-orange-400"
+                                    }`}
+                                >
+                                    {service.estado ||
+                                        "Sin estado"}
+                                </p>
+
+                            </div>
+
+                            {/* Precio */}
+                            <div className="rounded-xl border border-white/[0.05] bg-white/[0.02] p-3">
+
+                                <p className="text-[10px] uppercase tracking-wider text-white/25">
+                                    Importe
+                                </p>
+
+                                <p className="mt-1 text-sm font-semibold text-white/70">
+                                    {service.precio > 0
+                                        ? formatCurrency(
+                                              service.precio
+                                          )
+                                        : "Sin importe registrado"}
+                                </p>
+
+                            </div>
+
+                            {/* ID */}
+                            <div className="rounded-xl border border-white/[0.05] bg-white/[0.02] p-3">
+
+                                <p className="text-[10px] uppercase tracking-wider text-white/25">
+                                    Identificador
+                                </p>
+
+                                <p className="mt-1 truncate text-sm text-white/40">
+                                    {service.id}
+                                </p>
+
+                            </div>
+
+                        </div>
+
+                        {/* Descripción */}
+                        <div className="mt-3 rounded-xl border border-white/[0.05] bg-white/[0.02] p-4">
+
+                            <p className="text-[10px] uppercase tracking-wider text-white/25">
+                                Descripción / trabajo realizado
+                            </p>
+
+                            <p className="mt-2 text-sm leading-6 text-white/55">
+                                {service.descripcion ||
+                                    "No se registró una descripción para este servicio."}
+                            </p>
+
+                        </div>
+
+                    </div>
+
+                </details>
+            ))}
+
+        </div>
+    ) : (
+        <EmptyState
+            icon={
+                <Wrench size={28} />
+            }
+            text="Todavía no hay servicios registrados."
+        />
+    )}
+</section>
                     </div>
 
                     {/* COLUMNA DERECHA */}
