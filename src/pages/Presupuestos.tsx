@@ -8,11 +8,12 @@ import {
     DollarSign,
     Download,
     FileText,
-    MoreHorizontal,
     Plus,
     Search,
-    Send,
     Upload,
+    Trash2,
+        MessageCircle,
+
     X,
     Loader2,
 } from "lucide-react";
@@ -21,6 +22,8 @@ import {
     addDoc,
     collection,
     getDocs,
+    deleteDoc,
+    doc,
     serverTimestamp,
 } from "firebase/firestore";
 
@@ -33,7 +36,7 @@ import {
 import { useEffect, useMemo, useState } from "react";
 
 import AdminLayout from "../components/AdminLayout";
-import PresupuestoPdf from "../components/PresupuestoPdf";
+import DocumentoPDF from "../components/DocumentoPDF";
 import { db, storage } from "../config/firebase";
 
 
@@ -51,6 +54,7 @@ interface Client {
     uid: string;
     nombre: string;
     email: string;
+    telefono?: string;
 }
 
 interface Vehicle {
@@ -125,6 +129,9 @@ const Presupuestos = () => {
 
     const [loading, setLoading] = useState(true);
 
+    const [budgetToDelete, setBudgetToDelete] =
+    useState<Budget | null>(null);
+
     const [saving, setSaving] = useState(false);
 
     const [clients, setClients] = useState<Client[]>([]);
@@ -192,6 +199,7 @@ const Presupuestos = () => {
                         uid,
                         nombre,
                         email: data.email ?? "",
+                        telefono: data.telefono ?? data.phone ?? "",
                     };
 
                 });
@@ -832,28 +840,46 @@ const Presupuestos = () => {
                 ========================================== */
 
                 const presupuestoPdf =
-                    await PresupuestoPdf({
+                    await DocumentoPDF({
+                        tipo: "Presupuesto",
                         numero: numeroPresupuesto,
-
-                        selectedClient,
-
-                        selectedVehicle,
-
-                        budgetItems,
-
+                        fecha: today,
+                        logoUrl: selectedClient?.email
+                            ? undefined
+                            : undefined,
+                        cliente: {
+                            nombre:
+                                selectedClient?.nombre ??
+                                "Sin cliente",
+                            email:
+                                selectedClient?.email ??
+                                undefined,
+                        },
+                        vehiculo: {
+                            marca:
+                                selectedVehicle?.marca ||
+                                "",
+                            modelo:
+                                selectedVehicle?.modelo ||
+                                "",
+                            patente:
+                                selectedVehicle?.patente ||
+                                "",
+                        },
+                        items: budgetItems.map((item) => ({
+                            type: item.type,
+                            name: item.name,
+                            quantity: item.quantity,
+                            price: item.price,
+                        })),
                         laborCost,
-
                         partsCost,
-
-                        budgetTotal,
-
-                        notes:
-                            newBudget.notes,
-
+                        total: budgetTotal,
+                        observaciones: newBudget.notes,
+                        adelanto: undefined,
+                        saldoPendiente: 0,
                         partsPdf,
-
                         formatCurrency,
-
                         formatDate,
                     });
 
@@ -1266,6 +1292,142 @@ const blob =
     };
 
 
+    const handleDeleteBudget = async () => {
+    if (!budgetToDelete?.firestoreId) {
+        return;
+    }
+
+    try {
+        setSaving(true);
+
+        await deleteDoc(
+            doc(
+                db,
+                "presupuestos",
+                budgetToDelete.firestoreId
+            )
+        );
+
+        setBudgets((current) =>
+            current.filter(
+                (item) =>
+                    item.firestoreId !==
+                    budgetToDelete.firestoreId
+            )
+        );
+
+        setBudgetToDelete(null);
+
+    } catch (error) {
+        console.error(
+            "Error eliminando presupuesto:",
+            error
+        );
+
+        alert(
+            "No se pudo eliminar el presupuesto."
+        );
+    } finally {
+        setSaving(false);
+    }
+};
+
+const handleSendWhatsApp = async (
+    budget: Budget
+) => {
+    try {
+        // Buscar el cliente para obtener el teléfono
+        const client = clients.find(
+            (c) => c.uid === budget.clientId
+        );
+
+        if (!client?.telefono) {
+            alert(
+                "El cliente no tiene un número de teléfono registrado."
+            );
+
+            return;
+        }
+
+        // Verificar que exista el PDF completo
+        if (!budget.finalPdfUrl) {
+            alert(
+                "Este presupuesto no tiene un PDF disponible."
+            );
+
+            return;
+        }
+
+        // Limpiar teléfono
+        const cleanPhone =
+            client.telefono.replace(
+                /\D/g,
+                ""
+            );
+
+        // Agregar código de país de Argentina
+        let phoneWithCountryCode =
+            cleanPhone;
+
+        if (
+            !cleanPhone.startsWith("54")
+        ) {
+            if (
+                cleanPhone.startsWith("0")
+            ) {
+                phoneWithCountryCode =
+                    "54" +
+                    cleanPhone.slice(1);
+            } else if (
+                cleanPhone.length === 10
+            ) {
+                phoneWithCountryCode =
+                    "54" +
+                    cleanPhone;
+            }
+        }
+
+        // Solo enviamos el enlace al PDF
+
+const message =
+    `Hola ${client.nombre},
+
+Te enviamos el presupuesto correspondiente a tu vehículo.
+
+*Podés consultar el documento completo desde el siguiente enlace:*
+
+${budget.finalPdfUrl}
+
+Ante cualquier consulta, estamos a disposición
+
+Muchas gracias por confiar en *Mora Mecánica.*`;
+
+        const encodedMessage =
+            encodeURIComponent(
+                message
+            );
+
+        const whatsappUrl =
+            `https://wa.me/${phoneWithCountryCode}?text=${encodedMessage}`;
+
+        window.open(
+            whatsappUrl,
+            "_blank"
+        );
+
+    } catch (error) {
+
+        console.error(
+            "Error enviando presupuesto por WhatsApp:",
+            error
+        );
+
+        alert(
+            "No se pudo enviar el presupuesto por WhatsApp."
+        );
+    }
+};
+
     /* =====================================================
        RENDER
     ===================================================== */
@@ -1311,15 +1473,6 @@ const blob =
 
                     <div className="flex gap-3">
 
-                        <button
-                            className="hidden items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-600 shadow-sm transition hover:bg-slate-50 sm:flex"
-                        >
-
-                            <Send size={17} />
-
-                            Enviar presupuesto
-
-                        </button>
 
 
                         <button
@@ -1786,39 +1939,43 @@ const blob =
 
                                                     <td className="px-5 py-4">
 
-                                                        <div className="flex items-center gap-1">
+<div className="flex items-center gap-1">
 
-<button
-    type="button"
-    onClick={() =>
-        setSelectedBudget(
-            budget
-        )
-    }
-    className="flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold text-slate-500 transition hover:bg-blue-50 hover:text-blue-600"
-    title="Ver presupuesto"
->
+    <button
+        type="button"
+        onClick={() =>
+            setSelectedBudget(budget)
+        }
+        className="flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold text-slate-500 transition hover:bg-blue-50 hover:text-blue-600"
+        title="Ver presupuesto"
+    >
+        <Eye size={17} />
+        Ver
+    </button>
 
-    <Eye
-        size={17}
-    />
+    <button
+        type="button"
+        onClick={() => {
+            handleSendWhatsApp(budget);
+        }}
+        className="rounded-lg p-2 text-slate-400 transition hover:bg-emerald-50 hover:text-emerald-600"
+        title="Enviar por WhatsApp"
+    >
+        <MessageCircle size={18} />
+    </button>
 
-    Ver
+    <button
+        type="button"
+        onClick={() =>
+            setBudgetToDelete(budget)
+        }
+        className="rounded-lg p-2 text-slate-400 transition hover:bg-red-50 hover:text-red-600"
+        title="Eliminar presupuesto"
+    >
+        <Trash2 size={18} />
+    </button>
 
-</button>
-
-
-                                                            <button
-                                                                className="rounded-lg p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
-                                                            >
-
-                                                                <MoreHorizontal
-                                                                    size={18}
-                                                                />
-
-                                                            </button>
-
-                                                        </div>
+</div>
 
                                                     </td>
 
@@ -2287,26 +2444,29 @@ const blob =
                                                 $
                                             </span>
 
-                                            <input
-                                                type="number"
-                                                min="0"
-                                                value={
-                                                    newBudget.partsCost
-                                                }
-                                                onChange={(e) =>
-                                                    setNewBudget(
-                                                        {
-                                                            ...newBudget,
-                                                            partsCost:
-                                                                e
-                                                                    .target
-                                                                    .value,
-                                                        }
-                                                    )
-                                                }
-                                                placeholder="0"
-                                                className="w-full rounded-xl border border-slate-200 py-3 pl-8 pr-4 text-sm text-slate-900 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10"
-                                            />
+<input
+    type="text"
+    inputMode="numeric"
+    value={
+        newBudget.partsCost
+            ? Number(
+                  newBudget.partsCost
+              ).toLocaleString("es-AR")
+            : ""
+    }
+    onChange={(e) => {
+        const value = e.target.value
+            .replace(/\./g, "")
+            .replace(/\D/g, "");
+
+        setNewBudget({
+            ...newBudget,
+            partsCost: value,
+        });
+    }}
+    placeholder="0"
+    className="w-full rounded-xl border border-slate-200 py-3 pl-8 pr-4 text-sm text-slate-900 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10"
+/>
 
                                         </div>
 
@@ -2325,26 +2485,29 @@ const blob =
                                                 $
                                             </span>
 
-                                            <input
-                                                type="number"
-                                                min="0"
-                                                value={
-                                                    newBudget.laborCost
-                                                }
-                                                onChange={(e) =>
-                                                    setNewBudget(
-                                                        {
-                                                            ...newBudget,
-                                                            laborCost:
-                                                                e
-                                                                    .target
-                                                                    .value,
-                                                        }
-                                                    )
-                                                }
-                                                placeholder="0"
-                                                className="w-full rounded-xl border border-slate-200 py-3 pl-8 pr-4 text-sm text-slate-900 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10"
-                                            />
+<input
+    type="text"
+    inputMode="numeric"
+    value={
+        newBudget.laborCost
+            ? Number(
+                  newBudget.laborCost
+              ).toLocaleString("es-AR")
+            : ""
+    }
+    onChange={(e) => {
+        const value = e.target.value
+            .replace(/\./g, "")
+            .replace(/\D/g, "");
+
+        setNewBudget({
+            ...newBudget,
+            laborCost: value,
+        });
+    }}
+    placeholder="0"
+    className="w-full rounded-xl border border-slate-200 py-3 pl-8 pr-4 text-sm text-slate-900 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10"
+/>
 
                                         </div>
 
@@ -2477,25 +2640,24 @@ const blob =
                                                     />
 
 
-                                                    <input
-                                                        type="number"
-                                                        min="1"
-                                                        value={
-                                                            item.quantity
-                                                        }
-                                                        onChange={(e) =>
-                                                            updateBudgetItem(
-                                                                index,
-                                                                "quantity",
-                                                                Number(
-                                                                    e
-                                                                        .target
-                                                                        .value
-                                                                )
-                                                            )
-                                                        }
-                                                        className="rounded-lg border border-slate-200 px-3 py-2 text-xs text-slate-900 outline-none focus:border-blue-500"
-                                                    />
+<input
+    type="text"
+    inputMode="numeric"
+    value={item.quantity}
+    onChange={(e) => {
+        const value = e.target.value
+            .replace(/\D/g, "");
+
+        updateBudgetItem(
+            index,
+            "quantity",
+            value === ""
+                ? 0
+                : Number(value)
+        );
+    }}
+    className="rounded-lg border border-slate-200 px-3 py-2 text-xs text-slate-900 outline-none focus:border-blue-500"
+/>
 
 
                                                     <div className="relative">
@@ -2504,25 +2666,29 @@ const blob =
                                                             $
                                                         </span>
 
-                                                        <input
-                                                            type="number"
-                                                            min="0"
-                                                            value={
-                                                                item.price
-                                                            }
-                                                            onChange={(e) =>
-                                                                updateBudgetItem(
-                                                                    index,
-                                                                    "price",
-                                                                    Number(
-                                                                        e
-                                                                            .target
-                                                                            .value
-                                                                    )
-                                                                )
-                                                            }
-                                                            className="w-full rounded-lg border border-slate-200 py-2 pl-7 pr-3 text-xs text-slate-900 outline-none focus:border-blue-500"
-                                                        />
+<input
+    type="text"
+    inputMode="numeric"
+    value={
+        item.price
+            ? Number(item.price).toLocaleString("es-AR")
+            : ""
+    }
+    onChange={(e) => {
+        const value = e.target.value
+            .replace(/\./g, "")
+            .replace(/\D/g, "");
+
+        updateBudgetItem(
+            index,
+            "price",
+            value === ""
+                ? 0
+                : Number(value)
+        );
+    }}
+    className="w-full rounded-lg border border-slate-200 py-2 pl-7 pr-3 text-xs text-slate-900 outline-none focus:border-blue-500"
+/>
 
                                                     </div>
 
@@ -3019,6 +3185,85 @@ const blob =
 
     </div>
 
+)}
+
+{budgetToDelete && (
+    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/40 px-4 backdrop-blur-sm">
+
+        <div className="w-full max-w-md overflow-hidden rounded-2xl bg-white shadow-2xl">
+
+            <div className="p-6">
+
+                <div className="flex items-start gap-4">
+
+                    <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-red-50 text-red-600">
+                        <Trash2 size={22} />
+                    </div>
+
+                    <div>
+                        <h3 className="text-lg font-bold text-slate-900">
+                            Eliminar presupuesto
+                        </h3>
+
+                        <p className="mt-1 text-sm leading-6 text-slate-500">
+                            ¿Estás seguro de que querés eliminar el presupuesto{" "}
+                            <span className="font-semibold text-slate-700">
+                                {budgetToDelete.id}
+                            </span>
+                            ?
+                        </p>
+
+                        <p className="mt-2 text-xs text-slate-400">
+                            Esta acción no se puede deshacer.
+                        </p>
+                    </div>
+
+                </div>
+
+            </div>
+
+            <div className="flex justify-end gap-3 border-t border-slate-100 bg-slate-50/70 px-6 py-4">
+
+                <button
+                    type="button"
+                    onClick={() =>
+                        setBudgetToDelete(null)
+                    }
+                    disabled={saving}
+                    className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-600 transition hover:bg-slate-50 disabled:opacity-50"
+                >
+                    Cancelar
+                </button>
+
+                <button
+                    type="button"
+                    onClick={handleDeleteBudget}
+                    disabled={saving}
+                    className="flex items-center gap-2 rounded-xl bg-red-600 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-red-600/20 transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                    {saving ? (
+                        <>
+                            <Loader2
+                                size={16}
+                                className="animate-spin"
+                            />
+
+                            Eliminando...
+                        </>
+                    ) : (
+                        <>
+                            <Trash2 size={16} />
+
+                            Eliminar
+                        </>
+                    )}
+                </button>
+
+            </div>
+
+        </div>
+
+    </div>
 )}
 
         </AdminLayout>

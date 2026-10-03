@@ -22,6 +22,7 @@ interface DocumentoPDFProps {
         nombre: string;
         email?: string;
     };
+    logoUrl?: string;
     vehiculo: {
         marca: string;
         modelo: string;
@@ -73,6 +74,7 @@ const BLUE = rgb(0.2, 0.4, 0.85);
 const DocumentoPDF = async ({
     tipo,
     numero,
+    logoUrl,
     fecha,
     cliente,
     vehiculo,
@@ -88,6 +90,28 @@ const DocumentoPDF = async ({
     formatDate,
 }: DocumentoPDFProps) => {
     const pdf = await PDFDocument.create();
+
+    let logoImage: Awaited<ReturnType<typeof pdf.embedPng>> | null = null;
+
+    const logoToUse = logoUrl || "/logopdf.png";
+
+    try {
+        const response = await fetch(logoToUse);
+        const logoBytes = await response.arrayBuffer();
+
+        const imageUrl = logoToUse.toLowerCase();
+
+        if (imageUrl.endsWith(".png")) {
+            logoImage = await pdf.embedPng(logoBytes);
+        } else if (
+            imageUrl.endsWith(".jpg") ||
+            imageUrl.endsWith(".jpeg")
+        ) {
+            logoImage = await pdf.embedJpg(logoBytes);
+        }
+    } catch (error) {
+        console.error("No se pudo cargar el logo:", error);
+    }
 
     const regularFont = await pdf.embedFont(
         StandardFonts.Helvetica
@@ -156,7 +180,7 @@ const DocumentoPDF = async ({
         x1 = MARGIN_X,
         x2 = PAGE_WIDTH - MARGIN_X,
         thickness = 0.7,
-        color = LIGHT_GRAY
+        color = BLACK
     ) => {
         currentPage.drawLine({
             start: { x: x1, y: yPos },
@@ -175,60 +199,102 @@ const DocumentoPDF = async ({
         drawHeader();
     };
 
-    const drawHeader = () => {
-        // Título
+const drawHeader = () => {
+    const HEADER_TOP = PAGE_HEIGHT - 30;
+
+    // =====================================================
+    // LOGO
+    // =====================================================
+
+    if (logoImage) {
+        const logoWidth = 110;
+        const logoHeight =
+            (logoImage.height / logoImage.width) *
+            logoWidth;
+
+        currentPage.drawImage(logoImage, {
+            x: MARGIN_X,
+            y: HEADER_TOP - logoHeight - 5,
+            width: logoWidth,
+            height: logoHeight,
+        });
+    } else {
         drawText(
             "MORA MECÁNICA",
             MARGIN_X,
-            y,
+            HEADER_TOP,
             16,
             boldFont,
             BLACK
         );
+    }
 
-        // Tipo de documento
-        const tipoColor =
-            tipo === "Presupuesto"
-                ? BLUE
-                : tipo === "Recibo"
-                  ? GREEN
-                  : DARK_GRAY;
+    // =====================================================
+    // TIPO DE DOCUMENTO (derecha)
+    // =====================================================
 
-        drawText(
-            tipo.toUpperCase(),
-            PAGE_WIDTH - 150,
-            y,
-            11,
-            boldFont,
-            tipoColor
-        );
+    const tipoColor =
+        tipo === "Presupuesto"
+            ? BLUE
+            : tipo === "Recibo"
+              ? GREEN
+              : DARK_GRAY;
 
-        y -= 18;
+    const tipoText = tipo.toUpperCase();
 
-        // Número y fecha
-        drawText(
-            `Nro: ${numero}`,
-            MARGIN_X,
-            y,
-            9,
-            boldFont
-        );
+    drawText(
+        tipoText,
+        PAGE_WIDTH - MARGIN_X - 100,
+        HEADER_TOP,
+        12,
+        boldFont,
+        tipoColor
+    );
 
-        drawText(
-            `Fecha: ${formatDate(fecha)}`,
-            300,
-            y,
-            9,
-            regularFont,
-            DARK_GRAY
-        );
+    // =====================================================
+    // NÚMERO Y FECHA (segunda línea)
+    // =====================================================
 
-        y -= 20;
+    const infoY = HEADER_TOP - 104;
 
-        drawLine(y);
+    drawText(
+        `Nro: ${numero}`,
+        MARGIN_X,
+        infoY,
+        9,
+        boldFont,
+        DARK_GRAY
+    );
 
-        y -= 18;
-    };
+    drawText(
+        `Fecha: ${formatDate(fecha)}`,
+        PAGE_WIDTH - MARGIN_X - 130,
+        infoY,
+        9,
+        regularFont,
+        DARK_GRAY
+    );
+
+    // =====================================================
+    // LÍNEA SEPARADORA
+    // =====================================================
+
+    const separatorY = infoY - 8;
+
+    drawLine(
+        separatorY,
+        MARGIN_X,
+        PAGE_WIDTH - MARGIN_X,
+        1,
+        BLACK
+    );
+
+    // =====================================================
+    // ESPACIO PARA EL CONTENIDO
+    // =====================================================
+
+    y = separatorY - 28;
+};
 
     /* =====================================================
        HEADER
@@ -240,6 +306,8 @@ const DocumentoPDF = async ({
        CLIENTE Y VEHÍCULO
     ===================================================== */
 
+    y -= 8;
+
     drawText(
         "CLIENTE",
         MARGIN_X,
@@ -249,18 +317,18 @@ const DocumentoPDF = async ({
         GRAY
     );
 
-    y -= 14;
+    y -= 16;
 
     drawText(
         cliente.nombre,
         MARGIN_X,
         y,
-        10,
+        11,
         boldFont
     );
 
     if (cliente.email) {
-        y -= 12;
+        y -= 14;
         drawText(
             cliente.email,
             MARGIN_X,
@@ -271,11 +339,13 @@ const DocumentoPDF = async ({
         );
     }
 
-    // Vehículo a la derecha
+    // Vehículo a la derecha (pone referencias en el mismo nivel de CLIENTE)
+    const clienteLabelY = y + (cliente.email ? 30 : 16);
+    
     drawText(
         "VEHÍCULO",
         330,
-        y + 14,
+        clienteLabelY,
         8,
         boldFont,
         GRAY
@@ -284,35 +354,36 @@ const DocumentoPDF = async ({
     drawText(
         `${vehiculo.marca} ${vehiculo.modelo}`,
         330,
-        y,
-        10,
+        clienteLabelY - 16,
+        11,
         boldFont
     );
 
     if (vehiculo.patente) {
-        y -= 12;
         drawText(
             `Patente: ${vehiculo.patente}`,
             330,
-            y,
+            clienteLabelY - 30,
             8,
             regularFont,
             DARK_GRAY
         );
     }
 
-    y -= 28;
+    y -= 36;
 
     /* =====================================================
        TABLA DE ITEMS
     ===================================================== */
+
+    y -= 8;
 
     const TABLE_LEFT = MARGIN_X;
     const TABLE_RIGHT = PAGE_WIDTH - MARGIN_X;
     const TABLE_WIDTH = TABLE_RIGHT - TABLE_LEFT;
 
     // Header
-    const headerHeight = 20;
+    const headerHeight = 22;
     currentPage.drawRectangle({
         x: TABLE_LEFT,
         y: y - headerHeight,
@@ -324,8 +395,8 @@ const DocumentoPDF = async ({
     drawText(
         "CONCEPTO",
         TABLE_LEFT + 8,
-        y - 14,
-        7,
+        y - 15,
+        8,
         boldFont,
         WHITE
     );
@@ -333,8 +404,8 @@ const DocumentoPDF = async ({
     drawText(
         "TIPO",
         315,
-        y - 14,
-        7,
+        y - 15,
+        8,
         boldFont,
         WHITE
     );
@@ -342,8 +413,8 @@ const DocumentoPDF = async ({
     drawText(
         "CANT.",
         375,
-        y - 14,
-        7,
+        y - 15,
+        8,
         boldFont,
         WHITE
     );
@@ -351,8 +422,8 @@ const DocumentoPDF = async ({
     drawText(
         "PRECIO",
         420,
-        y - 14,
-        7,
+        y - 15,
+        8,
         boldFont,
         WHITE
     );
@@ -360,13 +431,13 @@ const DocumentoPDF = async ({
     drawText(
         "IMPORTE",
         490,
-        y - 14,
-        7,
+        y - 15,
+        8,
         boldFont,
         WHITE
     );
 
-    y -= 28;
+    y -= 30;
 
     // Validar items
     const validItems = items.filter(
@@ -465,17 +536,18 @@ const DocumentoPDF = async ({
         createNewPage();
     }
 
-    y -= 12;
+    y -= 16;
 
     drawText(
         "RESUMEN DE COSTOS",
         MARGIN_X,
         y,
-        9,
-        boldFont
+        10,
+        boldFont,
+        DARK_GRAY
     );
 
-    y -= 24;
+    y -= 26;
 
     // Mano de obra
     drawText(
@@ -492,10 +564,10 @@ const DocumentoPDF = async ({
         485,
         y,
         9,
-        regularFont
+        boldFont
     );
 
-    y -= 18;
+    y -= 20;
 
     // Repuestos
     drawText(
@@ -512,29 +584,30 @@ const DocumentoPDF = async ({
         485,
         y,
         9,
-        regularFont
+        boldFont
     );
 
-    y -= 12;
+    y -= 14;
 
     drawLine(y, 345, PAGE_WIDTH - MARGIN_X);
 
-    y -= 20;
+    y -= 22;
 
     // Total
     drawText(
         "TOTAL",
         345,
         y,
-        10,
-        boldFont
+        11,
+        boldFont,
+        tipo === "Recibo" ? GREEN : BLACK
     );
 
     drawText(
         formatCurrency(total),
         475,
         y,
-        12,
+        13,
         boldFont,
         tipo === "Recibo" ? GREEN : BLACK
     );
@@ -544,7 +617,7 @@ const DocumentoPDF = async ({
     ===================================================== */
 
     if (adelanto && adelanto.importe > 0) {
-        y -= 28;
+        y -= 30;
 
         drawText(
             "ADELANTO RECIBIDO",
@@ -561,12 +634,12 @@ const DocumentoPDF = async ({
             ),
             485,
             y,
-            9,
+            10,
             boldFont,
             GREEN
         );
 
-        y -= 16;
+        y -= 18;
 
         drawText(
             `${adelanto.medioPago} - ${formatDate(
@@ -579,17 +652,17 @@ const DocumentoPDF = async ({
             GRAY
         );
 
-        y -= 16;
+        y -= 18;
 
         drawLine(y, 345, PAGE_WIDTH - MARGIN_X);
 
-        y -= 18;
+        y -= 22;
 
         drawText(
             "SALDO PENDIENTE",
             345,
             y,
-            10,
+            11,
             boldFont,
             RED
         );
@@ -605,7 +678,7 @@ const DocumentoPDF = async ({
             ),
             475,
             y,
-            12,
+            13,
             boldFont,
             RED
         );
@@ -616,17 +689,18 @@ const DocumentoPDF = async ({
     ===================================================== */
 
     if (observaciones?.trim()) {
-        y -= 32;
+        y -= 36;
 
         drawText(
             "OBSERVACIONES",
             MARGIN_X,
             y,
             9,
-            boldFont
+            boldFont,
+            DARK_GRAY
         );
 
-        y -= 16;
+        y -= 18;
 
         const noteLines =
             observaciones
@@ -651,12 +725,12 @@ const DocumentoPDF = async ({
                         currentLine,
                         MARGIN_X,
                         y,
-                        8.5,
+                        8,
                         regularFont,
                         DARK_GRAY
                     );
 
-                    y -= 12;
+                    y -= 14;
 
                     currentLine = word;
                 } else {
@@ -669,12 +743,12 @@ const DocumentoPDF = async ({
                     currentLine,
                     MARGIN_X,
                     y,
-                    8.5,
+                    8,
                     regularFont,
                     DARK_GRAY
                 );
 
-                y -= 12;
+                y -= 14;
             }
         });
     }

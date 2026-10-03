@@ -6,6 +6,7 @@ import {
     Plus,
     Search,
     UserRound,
+    Trash2,
     X,
 } from "lucide-react";
 
@@ -14,6 +15,7 @@ import {
     collection,
     doc,
     getDocs,
+    deleteDoc,
     serverTimestamp,
     updateDoc,
 } from "firebase/firestore";
@@ -77,6 +79,9 @@ interface OptimizedImage {
 const Vehiculos = () => {
     const [vehicles, setVehicles] =
         useState<Vehicle[]>([]);
+
+        const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+const [deleting, setDeleting] = useState(false);
 
     const [clients, setClients] =
         useState<Client[]>([]);
@@ -934,6 +939,99 @@ const Vehiculos = () => {
             }
         };
 
+
+
+        /*
+============================================================
+ELIMINAR VEHÍCULO
+============================================================
+*/
+
+const handleDeleteVehicle = async () => {
+    if (!selectedVehicle) {
+        return;
+    }
+
+    try {
+        setDeleting(true);
+
+        /*
+        ------------------------------------------------
+        ELIMINAR IMAGEN DE STORAGE
+        ------------------------------------------------
+        */
+
+        if (selectedVehicle.imagenPath) {
+            try {
+                const imageRef = ref(
+                    storage,
+                    selectedVehicle.imagenPath
+                );
+
+                await deleteObject(imageRef);
+            } catch (error) {
+                console.warn(
+                    "No se pudo eliminar la imagen del vehículo:",
+                    error
+                );
+            }
+        }
+
+        /*
+        ------------------------------------------------
+        ELIMINAR VEHÍCULO DE FIRESTORE
+        ------------------------------------------------
+        */
+
+        await deleteDoc(
+            doc(
+                db,
+                "vehiculos",
+                selectedVehicle.id
+            )
+        );
+
+        /*
+        ------------------------------------------------
+        ACTUALIZAR LISTADO
+        ------------------------------------------------
+        */
+
+        setVehicles((prev) =>
+            prev.filter(
+                (vehicle) =>
+                    vehicle.id !==
+                    selectedVehicle.id
+            )
+        );
+
+        /*
+        ------------------------------------------------
+        CERRAR MODAL
+        ------------------------------------------------
+        */
+
+        resetVehicleForm();
+
+        setShowEditModal(false);
+
+        setShowDeleteConfirm(false);
+
+        setSelectedVehicle(null);
+
+    } catch (error) {
+        console.error(
+            "Error eliminando vehículo:",
+            error
+        );
+
+        alert(
+            "No se pudo eliminar el vehículo."
+        );
+    } finally {
+        setDeleting(false);
+    }
+};
     /*
     ============================================================
     CAMBIAR ESTADO
@@ -1033,37 +1131,56 @@ const Vehiculos = () => {
     ============================================================
     */
 
-    const filteredVehicles =
-        useMemo(() => {
-            return vehicles.filter(
-                (vehicle) => {
-                    const text =
-                        `${vehicle.marca} ${vehicle.modelo} ${vehicle.patente} ${vehicle.clienteNombre}`
-                            .toLowerCase();
+const filteredVehicles =
+    useMemo(() => {
+        return vehicles
+            .filter((vehicle) => {
+                const text =
+                    `${vehicle.marca} ${vehicle.modelo} ${vehicle.patente} ${vehicle.clienteNombre}`
+                        .toLowerCase();
 
-                    const matchesSearch =
-                        text.includes(
-                            search.toLowerCase()
-                        );
-
-                    const matchesStatus =
-                        statusFilter ===
-                            "Todos" ||
-                        vehicle.estado ===
-                            statusFilter;
-
-                    return (
-                        matchesSearch &&
-                        matchesStatus
+                const matchesSearch =
+                    text.includes(
+                        search.toLowerCase()
                     );
-                }
-            );
-        }, [
-            vehicles,
-            search,
-            statusFilter,
-        ]);
 
+                const matchesStatus =
+                    statusFilter ===
+                        "Todos" ||
+                    vehicle.estado ===
+                        statusFilter;
+
+                return (
+                    matchesSearch &&
+                    matchesStatus
+                );
+            })
+            .sort((a, b) => {
+                const dateA =
+                    a.creadoEn?.toDate
+                        ? a.creadoEn
+                              .toDate()
+                              .getTime()
+                        : new Date(
+                              a.creadoEn ?? 0
+                          ).getTime();
+
+                const dateB =
+                    b.creadoEn?.toDate
+                        ? b.creadoEn
+                              .toDate()
+                              .getTime()
+                        : new Date(
+                              b.creadoEn ?? 0
+                          ).getTime();
+
+                return dateB - dateA;
+            });
+    }, [
+        vehicles,
+        search,
+        statusFilter,
+    ]);
     /*
     ============================================================
     RENDER
@@ -2037,49 +2154,135 @@ const Vehiculos = () => {
 
                         {/* FOOTER */}
 
-                        <div className="flex items-center justify-end gap-3 border-t border-slate-100 px-6 py-4">
+                        {/* FOOTER */}
 
-                            <button
-                                type="button"
-                                disabled={
-                                    saving
-                                }
-                                onClick={() => {
-                                    resetVehicleForm();
+<div className="border-t border-slate-100 px-6 py-4">
 
-                                    setShowModal(
-                                        false
-                                    );
+    {!showDeleteConfirm ? (
 
-                                    setShowEditModal(
-                                        false
-                                    );
-                                }}
-                                className="rounded-xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
-                            >
-                                Cancelar
-                            </button>
+        <div className="flex items-center justify-between">
 
-                            <button
-                                type="button"
-                                disabled={
-                                    saving
-                                }
-                                onClick={
-                                    showEditModal
-                                        ? handleUpdateVehicle
-                                        : handleCreateVehicle
-                                }
-                                className="rounded-xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
-                            >
-                                {saving
-                                    ? "Guardando..."
-                                    : showEditModal
-                                    ? "Guardar cambios"
-                                    : "Guardar vehículo"}
-                            </button>
+            {/* ELIMINAR - SOLO EN EDICIÓN */}
 
-                        </div>
+            {showEditModal ? (
+                <button
+                    type="button"
+                    onClick={() =>
+                        setShowDeleteConfirm(true)
+                    }
+                    disabled={saving}
+                    className="flex items-center gap-2 rounded-xl border border-red-200 bg-white px-4 py-3 text-sm font-semibold text-red-600 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                    <Trash2 size={16} />
+
+                    Eliminar vehículo
+                </button>
+            ) : (
+                <div />
+            )}
+
+            {/* ACCIONES */}
+
+            <div className="flex items-center gap-3">
+
+                <button
+                    type="button"
+                    disabled={saving}
+                    onClick={() => {
+                        resetVehicleForm();
+
+                        setShowModal(false);
+
+                        setShowEditModal(false);
+
+                        setShowDeleteConfirm(false);
+                    }}
+                    className="rounded-xl border border-slate-200 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
+                >
+                    Cancelar
+                </button>
+
+                <button
+                    type="button"
+                    disabled={saving}
+                    onClick={
+                        showEditModal
+                            ? handleUpdateVehicle
+                            : handleCreateVehicle
+                    }
+                    className="rounded-xl bg-slate-900 px-5 py-3 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                    {saving
+                        ? "Guardando..."
+                        : showEditModal
+                        ? "Guardar cambios"
+                        : "Guardar vehículo"}
+                </button>
+
+            </div>
+
+        </div>
+
+    ) : (
+
+        /* SEGUNDA CONFIRMACIÓN */
+
+        <div className="rounded-2xl border border-red-200 bg-red-50 p-4">
+
+            <div className="flex items-start gap-3">
+
+                <div className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-red-100 text-red-600">
+                    <Trash2 size={19} />
+                </div>
+
+                <div className="flex-1">
+
+                    <h3 className="text-sm font-bold text-red-800">
+                        ¿Eliminar este vehículo?
+                    </h3>
+
+                    <p className="mt-1 text-xs leading-relaxed text-red-700">
+                        Vas a eliminar permanentemente el
+                        registro de este vehículo.
+                        Esta acción no se puede deshacer.
+                    </p>
+
+                    <div className="mt-4 flex justify-end gap-2">
+
+                        <button
+                            type="button"
+                            onClick={() =>
+                                setShowDeleteConfirm(false)
+                            }
+                            disabled={deleting}
+                            className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-600 transition hover:bg-slate-50 disabled:opacity-60"
+                        >
+                            Cancelar
+                        </button>
+
+                        <button
+                            type="button"
+                            onClick={handleDeleteVehicle}
+                            disabled={deleting}
+                            className="flex items-center gap-2 rounded-xl bg-red-600 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-red-600/20 transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                            <Trash2 size={16} />
+
+                            {deleting
+                                ? "Eliminando..."
+                                : "Sí, eliminar vehículo"}
+                        </button>
+
+                    </div>
+
+                </div>
+
+            </div>
+
+        </div>
+    )}
+
+</div>
 
                     </div>
 

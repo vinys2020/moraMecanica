@@ -57,6 +57,7 @@ interface UserData {
     direccion: string;
     rol: UserRole | null;
     activo: boolean;
+    logoUrl?: string;
     creadoEn?: any;
 }
 
@@ -189,7 +190,7 @@ const ModalGeneral = ({
         fechaEntregaEstimada: "",
         kilometraje: "",
         precio: "",
-        estado: "Completado" as ServiceStatus,
+        estado: "En proceso" as ServiceStatus,
         observaciones: "",
     });
 
@@ -1496,6 +1497,9 @@ const budgetTotal =
 
                     const pdfBytes = await DocumentoPDF({
                         tipo: "Presupuesto",
+    logoUrl: selectedUser.logoUrl || undefined,
+
+                        
                         numero: budgetNumber,
                         fecha: getTodayInputDate(),
                         cliente: {
@@ -2499,20 +2503,26 @@ const budgetTotal =
                                 className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
                             />
 
-                            <input
-                                type="number"
-                                min="0"
-                                value={
-                                    newService.kilometraje
-                                }
-                                onChange={(e) =>
-                                    handleServiceChange(
-                                        "kilometraje",
-                                        e.target.value
-                                    )
-                                }
-                                className="w-full rounded-xl border border-slate-200 py-3 pl-10 pr-4 text-sm text-slate-700 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10"
-                            />
+<input
+    type="text"
+    inputMode="numeric"
+    value={
+        newService.kilometraje
+            ? Number(newService.kilometraje).toLocaleString("es-AR")
+            : ""
+    }
+    onChange={(e) => {
+        const value = e.target.value
+            .replace(/\./g, "")
+            .replace(/\D/g, "");
+
+        handleServiceChange(
+            "kilometraje",
+            value
+        );
+    }}
+    className="w-full rounded-xl border border-slate-200 py-3 pl-10 pr-4 text-sm text-slate-700 outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10"
+/>
 
                         </div>
 
@@ -2527,19 +2537,27 @@ const budgetTotal =
                             Importe
                         </label>
 
-                        <input
-                            type="number"
-                            min="0"
-                            value={newService.precio}
-                            onChange={(e) =>
-                                handleServiceChange(
-                                    "precio",
-                                    e.target.value
-                                )
-                            }
-                            placeholder="0"
-                            className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm text-slate-700 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10"
-                        />
+<input
+    type="text"
+    inputMode="numeric"
+    value={
+        newService.precio
+            ? Number(newService.precio).toLocaleString("es-AR")
+            : ""
+    }
+    onChange={(e) => {
+        const value = e.target.value
+            .replace(/\./g, "")
+            .replace(/\D/g, "");
+
+        handleServiceChange(
+            "precio",
+            value
+        );
+    }}
+    placeholder="0"
+    className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm text-slate-700 outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10"
+/>
 
                     </div>
 
@@ -2781,21 +2799,29 @@ const budgetTotal =
                                         className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
                                     />
 
-                                    <input
-                                        type="number"
-                                        min="0"
-                                        value={
-                                            advancePayment.importe
-                                        }
-                                        onChange={(e) =>
-                                            handleAdvancePaymentChange(
-                                                "importe",
-                                                e.target.value
-                                            )
-                                        }
-                                        placeholder="0"
-                                        className="w-full rounded-xl border border-slate-200 py-3 pl-10 pr-4 text-sm text-slate-700 outline-none focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10"
-                                    />
+<input
+    type="text"
+    inputMode="numeric"
+    value={
+        advancePayment.importe
+            ? Number(
+                  advancePayment.importe
+              ).toLocaleString("es-AR")
+            : ""
+    }
+    onChange={(e) => {
+        const value = e.target.value
+            .replace(/\./g, "")
+            .replace(/\D/g, "");
+
+        handleAdvancePaymentChange(
+            "importe",
+            value
+        );
+    }}
+    placeholder="0"
+    className="w-full rounded-xl border border-slate-200 py-3 pl-10 pr-4 text-sm text-slate-700 outline-none focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10"
+/>
 
                                 </div>
 
@@ -3203,18 +3229,26 @@ const budgetTotal =
                         $
                     </span>
 
-                    <input
-                        type="number"
-                        min="0"
-                        value={budgetPartsCost}
-                        onChange={(e) =>
-                            setBudgetPartsCost(
-                                e.target.value
-                            )
-                        }
-                        placeholder="0"
-                        className="text-slate-700 w-full rounded-lg border border-slate-200 bg-white py-2.5 pl-7 pr-3 text-sm outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10"
-                    />
+<input
+    type="text"
+    inputMode="numeric"
+    value={
+        budgetPartsCost
+            ? Number(
+                  budgetPartsCost
+              ).toLocaleString("es-AR")
+            : ""
+    }
+    onChange={(e) => {
+        const value = e.target.value
+            .replace(/\./g, "")
+            .replace(/\D/g, "");
+
+        setBudgetPartsCost(value);
+    }}
+    placeholder="0"
+    className="text-slate-700 w-full rounded-lg border border-slate-200 bg-white py-2.5 pl-7 pr-3 text-sm outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10"
+/>
 
                 </div>
 
@@ -3335,21 +3369,24 @@ const budgetTotal =
                             />
 
 
-                            <input
-                                type="number"
-                                min="1"
-                                value={item.quantity}
-                                onChange={(e) =>
-                                    updateBudgetItem(
-                                        index,
-                                        "quantity",
-                                        Number(
-                                            e.target.value
-                                        )
-                                    )
-                                }
-                                className="text-slate-700 rounded-lg border border-slate-200 px-2 py-2 text-xs outline-none focus:border-blue-500"
-                            />
+<input
+    type="text"
+    inputMode="numeric"
+    value={item.quantity}
+    onChange={(e) => {
+        const value = e.target.value
+            .replace(/\D/g, "");
+
+        updateBudgetItem(
+            index,
+            "quantity",
+            value === ""
+                ? 0
+                : Number(value)
+        );
+    }}
+    className="text-slate-700 rounded-lg border border-slate-200 px-2 py-2 text-xs outline-none focus:border-blue-500"
+/>
 
 
                             <div className="relative">
@@ -3358,21 +3395,29 @@ const budgetTotal =
                                     $
                                 </span>
 
-                                <input
-                                    type="number"
-                                    min="0"
-                                    value={item.price}
-                                    onChange={(e) =>
-                                        updateBudgetItem(
-                                            index,
-                                            "price",
-                                            Number(
-                                                e.target.value
-                                            )
-                                        )
-                                    }
-                                    className="text-slate-700 w-full rounded-lg border border-slate-200 py-2 pl-6 pr-2 text-xs outline-none focus:border-blue-500"
-                                />
+<input
+    type="text"
+    inputMode="numeric"
+    value={
+        item.price
+            ? Number(item.price).toLocaleString("es-AR")
+            : ""
+    }
+    onChange={(e) => {
+        const value = e.target.value
+            .replace(/\./g, "")
+            .replace(/\D/g, "");
+
+        updateBudgetItem(
+            index,
+            "price",
+            value === ""
+                ? 0
+                : Number(value)
+        );
+    }}
+    className="text-slate-700 w-full rounded-lg border border-slate-200 py-2 pl-6 pr-2 text-xs outline-none focus:border-blue-500"
+/>
 
                             </div>
 

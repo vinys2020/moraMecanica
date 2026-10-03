@@ -8,6 +8,7 @@ import {
     Eye,
     FileText,
     Gauge,
+    Trash2,
     Plus,
     Search,
     UserRound,
@@ -19,6 +20,7 @@ import {
     addDoc,
     collection,
     doc,
+    deleteDoc,
     getDocs,
     serverTimestamp,
     updateDoc,
@@ -124,6 +126,12 @@ const Servicios = () => {
     const [selectedService, setSelectedService] =
         useState<Service | null>(null);
 
+        const [showDeleteConfirm, setShowDeleteConfirm] =
+    useState(false);
+
+const [deleting, setDeleting] =
+    useState(false);
+
     const [showServiceDetailModal, setShowServiceDetailModal] =
         useState(false);
 
@@ -166,7 +174,7 @@ const Servicios = () => {
         fechaEntregaEstimada: "",
         kilometraje: "",
         precio: "",
-        estado: "Completado" as ServiceStatus,
+        estado: "En proceso" as ServiceStatus,
         observaciones: "",
     });
 
@@ -439,11 +447,12 @@ setVehicles(vehiculosData);
        FILTER
     ============================================================ */
 
-    const filteredServices = useMemo(() => {
-        const normalizedSearch =
-            search.toLowerCase().trim();
+const filteredServices = useMemo(() => {
+    const normalizedSearch =
+        search.toLowerCase().trim();
 
-        return services.filter((service) => {
+    return services
+        .filter((service) => {
             const matchesSearch =
                 service.tipo
                     .toLowerCase()
@@ -476,13 +485,30 @@ setVehicles(vehiculosData);
                 matchesCategory &&
                 matchesStatus
             );
+        })
+        .sort((a, b) => {
+            const dateA =
+                a.creadoEn?.toDate
+                    ? a.creadoEn.toDate().getTime()
+                    : new Date(
+                          a.creadoEn ?? 0
+                      ).getTime();
+
+            const dateB =
+                b.creadoEn?.toDate
+                    ? b.creadoEn.toDate().getTime()
+                    : new Date(
+                          b.creadoEn ?? 0
+                      ).getTime();
+
+            return dateB - dateA;
         });
-    }, [
-        services,
-        search,
-        categoryFilter,
-        statusFilter,
-    ]);
+}, [
+    services,
+    search,
+    categoryFilter,
+    statusFilter,
+]);
 
     /* ============================================================
        STATS
@@ -955,6 +981,45 @@ setVehicles(vehiculosData);
             }
         };
 
+
+
+        const handleDeleteService = async () => {
+    if (!editingService) {
+        return;
+    }
+
+    try {
+        setDeleting(true);
+
+        await deleteDoc(
+            doc(
+                db,
+                "servicios",
+                editingService.id
+            )
+        );
+
+        await cargarDatos();
+
+        setShowDeleteConfirm(false);
+        setEditingService(null);
+        setShowModal(false);
+        resetForm();
+
+    } catch (error) {
+        console.error(
+            "Error eliminando servicio:",
+            error
+        );
+
+        alert(
+            "No se pudo eliminar el servicio."
+        );
+    } finally {
+        setDeleting(false);
+    }
+};
+
     /* ============================================================
        RESET
     ============================================================ */
@@ -969,7 +1034,7 @@ setVehicles(vehiculosData);
             fechaEntregaEstimada: "",
             kilometraje: "",
             precio: "",
-            estado: "Completado",
+            estado: "En proceso",
             observaciones: "",
         });
     };
@@ -2076,30 +2141,29 @@ setVehicles(vehiculosData);
                                             }
                                             className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"
                                         />
+<input
+    type="text"
+    inputMode="numeric"
+    value={
+        newService.kilometraje
+            ? Number(
+                  newService.kilometraje
+              ).toLocaleString("es-AR")
+            : ""
+    }
+    onChange={(e) => {
+        const value = e.target.value
+            .replace(/\./g, "")
+            .replace(/\D/g, "");
 
-                                        <input
-                                            type="number"
-                                            min="0"
-                                            value={
-                                                newService.kilometraje
-                                            }
-                                            onChange={(
-                                                e
-                                            ) =>
-                                                setNewService(
-                                                    {
-                                                        ...newService,
-
-                                                        kilometraje:
-                                                            e
-                                                                .target
-                                                                .value,
-                                                    }
-                                                )
-                                            }
-                                            placeholder="82450"
-                                            className="w-full rounded-xl border border-slate-200 py-3 pl-11 pr-4 text-sm text-slate-900 outline-none placeholder:text-slate-400 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10"
-                                        />
+        setNewService({
+            ...newService,
+            kilometraje: value,
+        });
+    }}
+    placeholder="82.450"
+    className="w-full rounded-xl border border-slate-200 py-3 pl-11 pr-4 text-sm text-slate-900 outline-none placeholder:text-slate-400 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10"
+/>
 
                                     </div>
 
@@ -2120,29 +2184,29 @@ setVehicles(vehiculosData);
                                             className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400"
                                         />
 
-                                        <input
-                                            type="number"
-                                            min="0"
-                                            value={
-                                                newService.precio
-                                            }
-                                            onChange={(
-                                                e
-                                            ) =>
-                                                setNewService(
-                                                    {
-                                                        ...newService,
+<input
+    type="text"
+    inputMode="numeric"
+    value={
+        newService.precio
+            ? Number(
+                  newService.precio
+              ).toLocaleString("es-AR")
+            : ""
+    }
+    onChange={(e) => {
+        const value = e.target.value
+            .replace(/\./g, "")
+            .replace(/\D/g, "");
 
-                                                        precio:
-                                                            e
-                                                                .target
-                                                                .value,
-                                                    }
-                                                )
-                                            }
-                                            placeholder="95000"
-                                            className="w-full rounded-xl border border-slate-200 py-3 pl-11 pr-4 text-sm text-slate-900 outline-none placeholder:text-slate-400 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10"
-                                        />
+        setNewService({
+            ...newService,
+            precio: value,
+        });
+    }}
+    placeholder="95.000"
+    className="w-full rounded-xl border border-slate-200 py-3 pl-11 pr-4 text-sm text-slate-900 outline-none placeholder:text-slate-400 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10"
+/>
 
                                     </div>
 
@@ -2299,65 +2363,143 @@ setVehicles(vehiculosData);
 
                         {/* FOOTER */}
 
-                        <div className="sticky bottom-0 flex flex-col-reverse gap-3 border-t border-slate-100 bg-slate-50/80 px-6 py-4 sm:flex-row sm:justify-end">
+{/* FOOTER */}
 
-                            <button
-                                type="button"
-                                onClick={
-                                    closeModal
-                                }
-                                disabled={
-                                    saving
-                                }
-                                className="rounded-xl border border-slate-200 bg-white px-5 py-2.5 text-sm font-semibold text-slate-600 transition hover:bg-slate-50 disabled:opacity-50"
-                            >
-                                Cancelar
-                            </button>
+<div className="sticky bottom-0 border-t border-slate-100 bg-slate-50/80 px-6 py-4">
 
-                            <button
-                                type="button"
-                                onClick={
-                                    editingService
-                                        ? handleUpdateService
-                                        : handleCreateService
-                                }
-                                disabled={
-                                    saving
-                                }
-                                className="flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-blue-600/20 transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
-                            >
+    {!showDeleteConfirm ? (
 
-                                {saving ? (
-                                    <>
-                                        <div className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+        <div className="flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-between">
 
-                                        Guardando...
-                                    </>
-                                ) : (
-                                    <>
-                                        {editingService ? (
-                                            <Edit3
-                                                size={
-                                                    17
-                                                }
-                                            />
-                                        ) : (
-                                            <Plus
-                                                size={
-                                                    17
-                                                }
-                                            />
-                                        )}
+            {/* ELIMINAR - SOLO EN EDICIÓN */}
 
-                                        {editingService
-                                            ? "Guardar cambios"
-                                            : "Registrar servicio"}
-                                    </>
-                                )}
+            {editingService ? (
+                <button
+                    type="button"
+                    onClick={() =>
+                        setShowDeleteConfirm(true)
+                    }
+                    disabled={saving}
+                    className="flex items-center justify-center gap-2 rounded-xl border border-red-200 bg-white px-4 py-2.5 text-sm font-semibold text-red-600 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                    <Trash2 size={16} />
 
-                            </button>
+                    Eliminar servicio
+                </button>
+            ) : (
+                <div />
+            )}
 
-                        </div>
+            {/* ACCIONES */}
+
+            <div className="flex items-center justify-end gap-3">
+
+                <button
+                    type="button"
+                    onClick={() => {
+                        setShowDeleteConfirm(false);
+                        closeModal();
+                    }}
+                    disabled={saving}
+                    className="rounded-xl border border-slate-200 bg-white px-5 py-2.5 text-sm font-semibold text-slate-600 transition hover:bg-slate-50 disabled:opacity-50"
+                >
+                    Cancelar
+                </button>
+
+                <button
+                    type="button"
+                    onClick={
+                        editingService
+                            ? handleUpdateService
+                            : handleCreateService
+                    }
+                    disabled={saving}
+                    className="flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-blue-600/20 transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                    {saving ? (
+                        <>
+                            <div className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+                            Guardando...
+                        </>
+                    ) : (
+                        <>
+                            {editingService ? (
+                                <Edit3 size={17} />
+                            ) : (
+                                <Plus size={17} />
+                            )}
+
+                            {editingService
+                                ? "Guardar cambios"
+                                : "Registrar servicio"}
+                        </>
+                    )}
+                </button>
+
+            </div>
+
+        </div>
+
+    ) : (
+
+        /* SEGUNDA CONFIRMACIÓN */
+
+        <div className="rounded-2xl border border-red-200 bg-red-50 p-4">
+
+            <div className="flex items-start gap-3">
+
+                <div className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-red-100 text-red-600">
+                    <Trash2 size={19} />
+                </div>
+
+                <div className="flex-1">
+
+                    <h3 className="text-sm font-bold text-red-800">
+                        ¿Eliminar este servicio?
+                    </h3>
+
+                    <p className="mt-1 text-xs leading-relaxed text-red-700">
+                        Vas a eliminar permanentemente
+                        este servicio.
+                        Esta acción no se puede deshacer.
+                    </p>
+
+                    <div className="mt-4 flex justify-end gap-2">
+
+                        <button
+                            type="button"
+                            onClick={() =>
+                                setShowDeleteConfirm(false)
+                            }
+                            disabled={deleting}
+                            className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-600 transition hover:bg-slate-50 disabled:opacity-60"
+                        >
+                            Cancelar
+                        </button>
+
+                        <button
+                            type="button"
+                            onClick={handleDeleteService}
+                            disabled={deleting}
+                            className="flex items-center gap-2 rounded-xl bg-red-600 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-red-600/20 transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                            <Trash2 size={16} />
+
+                            {deleting
+                                ? "Eliminando..."
+                                : "Sí, eliminar servicio"}
+                        </button>
+
+                    </div>
+
+                </div>
+
+            </div>
+
+        </div>
+    )}
+
+</div>
 
                     </div>
 
@@ -2637,25 +2779,6 @@ setVehicles(vehiculosData);
                                     Cerrar
                                 </button>
 
-                                <button
-                                    type="button"
-                                    onClick={() => {
-                                        closeServiceDetailModal();
-
-                                        openEditServiceModal(
-                                            selectedService
-                                        );
-                                    }}
-                                    className="flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-700"
-                                >
-                                    <Edit3
-                                        size={
-                                            16
-                                        }
-                                    />
-
-                                    Editar servicio
-                                </button>
 
                             </div>
 

@@ -7,16 +7,18 @@ import {
     Clock3,
     CreditCard,
     FileText,
-    MoreHorizontal,
     Receipt,
     Search,
     WalletCards,
     X,
+    Trash2,
+    Eye,
 } from "lucide-react";
 
 import {
     addDoc,
     collection,
+    deleteDoc,
     doc,
     getDocs,
     serverTimestamp,
@@ -271,6 +273,15 @@ const Facturacion = () => {
     ] = useState<
         "Todos" | PaymentMethod
     >("Todos");
+
+const [selectedBillingMonth, setSelectedBillingMonth] =
+    useState(() => {
+        const date = new Date();
+
+        return `${date.getFullYear()}-${String(
+            date.getMonth() + 1
+        ).padStart(2, "0")}`;
+    });
 
     const [
         periodFilter,
@@ -606,23 +617,23 @@ const Facturacion = () => {
                             };
                         }
                     )
-                    .sort((a, b) => {
-                        const dateA =
-                            parseDate(
-                                a.fecha
-                            )?.getTime() ??
-                            0;
+.sort((a, b) => {
+    const dateA =
+        parseDate(
+            a.creadoEn
+        )?.getTime() ??
+        0;
 
-                        const dateB =
-                            parseDate(
-                                b.fecha
-                            )?.getTime() ??
-                            0;
+    const dateB =
+        parseDate(
+            b.creadoEn
+        )?.getTime() ??
+        0;
 
-                        return (
-                            dateB - dateA
-                        );
-                    });
+    return (
+        dateB - dateA
+    );
+});
 
             setPayments(
                 paymentsData
@@ -648,204 +659,6 @@ const Facturacion = () => {
     useEffect(() => {
         cargarDatos();
     }, []);
-
-    const filteredServices =
-        useMemo(() => {
-            const normalizedSearch =
-                search
-                    .toLowerCase()
-                    .trim();
-
-            return services.filter(
-                (service) => {
-                    const matchesSearch =
-                        service.id
-                            .toLowerCase()
-                            .includes(
-                                normalizedSearch
-                            ) ||
-                        service.clienteNombre
-                            .toLowerCase()
-                            .includes(
-                                normalizedSearch
-                            ) ||
-                        service.vehiculoNombre
-                            .toLowerCase()
-                            .includes(
-                                normalizedSearch
-                            ) ||
-                        service.patente
-                            .toLowerCase()
-                            .includes(
-                                normalizedSearch
-                            ) ||
-                        service.tipo
-                            .toLowerCase()
-                            .includes(
-                                normalizedSearch
-                            );
-
-                    const matchesStatus =
-                        statusFilter ===
-                            "Todos" ||
-                        service.estado ===
-                            statusFilter;
-
-                    const servicePayments =
-                        payments.filter(
-                            (payment) =>
-                                payment.servicioId ===
-                                service.id
-                        );
-
-                    const matchesPayment =
-                        paymentFilter ===
-                            "Todos" ||
-                        servicePayments.some(
-                            (payment) =>
-                                payment.medioPago ===
-                                paymentFilter
-                        );
-
-                    return (
-                        matchesSearch &&
-                        matchesStatus &&
-                        matchesPayment
-                    );
-                }
-            );
-        }, [
-            services,
-            payments,
-            search,
-            statusFilter,
-            paymentFilter,
-        ]);
-
-    const totalBilled =
-        services
-            .filter(
-                (service) =>
-                    service.estado ===
-                    "Completado"
-            )
-            .reduce(
-                (sum, service) =>
-                    sum + service.precio,
-                0
-            );
-
-    const totalCollected =
-        payments.reduce(
-            (sum, payment) =>
-                sum + payment.monto,
-            0
-        );
-
-    const totalPending =
-        services
-            .filter(
-                (service) =>
-                    service.estado ===
-                    "Completado"
-            )
-            .reduce(
-                (sum, service) =>
-                    sum +
-                    service.pendienteCobro,
-                0
-            );
-
-    const pendingServices =
-        services.filter(
-            (service) =>
-                service.estado ===
-                    "Pendiente" ||
-                service.estado ===
-                    "En proceso"
-        ).length;
-
-    const completedServices =
-        services.filter(
-            (service) =>
-                service.estado ===
-                "Completado"
-        ).length;
-
-    const paidServices =
-        services.filter(
-            (service) =>
-                service.estado ===
-                    "Completado" &&
-                service.estadoPago ===
-                    "Pagado"
-        ).length;
-
-    const collectionPercentage =
-        totalBilled > 0
-            ? Math.min(
-                  Math.round(
-                      (totalCollected /
-                          totalBilled) *
-                          100
-                  ),
-                  100
-              )
-            : 0;
-
-    const paymentMethodTotals =
-        payments.reduce<
-            Record<
-                PaymentMethod,
-                number
-            >
-        >(
-            (
-                accumulator,
-                payment
-            ) => {
-                accumulator[
-                    payment.medioPago
-                ] =
-                    (accumulator[
-                        payment.medioPago
-                    ] ?? 0) +
-                    payment.monto;
-
-                return accumulator;
-            },
-            {
-                Efectivo: 0,
-                Transferencia: 0,
-                Tarjeta: 0,
-                "Mercado Pago": 0,
-            }
-        );
-
-    const totalPayments =
-        Object.values(
-            paymentMethodTotals
-        ).reduce(
-            (sum, value) =>
-                sum + value,
-            0
-        );
-
-    const getPaymentPercentage = (
-        method: PaymentMethod
-    ) => {
-        if (totalPayments <= 0) {
-            return 0;
-        }
-
-        return Math.round(
-            (paymentMethodTotals[
-                method
-            ] /
-                totalPayments) *
-                100
-        );
-    };
 
     const handleCompleteService =
         async (
@@ -894,6 +707,72 @@ const Facturacion = () => {
                 );
             }
         };
+
+        const handleDeleteService = async (
+    service: BillingService
+) => {
+    const confirmDelete = window.confirm(
+        `¿Eliminar el servicio de ${service.clienteNombre}?\n\nTambién se eliminarán todos los pagos asociados a este servicio.`
+    );
+
+    if (!confirmDelete) {
+        return;
+    }
+
+    try {
+        setProcessingId(service.id);
+
+        // Buscar pagos asociados al servicio
+        const paymentsSnapshot = await getDocs(
+            collection(db, "pagos")
+        );
+
+        const relatedPayments =
+            paymentsSnapshot.docs.filter(
+                (paymentDoc) =>
+                    paymentDoc.data().servicioId ===
+                    service.id
+            );
+
+        // Eliminar pagos asociados
+        await Promise.all(
+            relatedPayments.map((paymentDoc) =>
+                deleteDoc(
+                    doc(
+                        db,
+                        "pagos",
+                        paymentDoc.id
+                    )
+                )
+            )
+        );
+
+        // Eliminar servicio
+        await deleteDoc(
+            doc(
+                db,
+                "servicios",
+                service.id
+            )
+        );
+
+        setOpenMenuId(null);
+
+        await cargarDatos();
+    } catch (err) {
+        console.error(
+            "Error eliminando servicio:",
+            err
+        );
+
+        alert(
+            "No se pudo eliminar el servicio."
+        );
+    } finally {
+        setProcessingId(null);
+    }
+};
+
 
     const openPaymentModal = (
         service: BillingService
@@ -957,6 +836,133 @@ const Facturacion = () => {
 
             setPaymentNotes("");
         };
+
+    const descargarReciboPDF = async (
+        service: BillingService
+    ) => {
+        try {
+            const servicePayments =
+                payments.filter(
+                    (item) =>
+                        item.servicioId ===
+                        service.id
+                );
+
+            const lastPayment =
+                [...servicePayments].sort(
+                    (a, b) => {
+                        const dateA =
+                            parseDate(
+                                a.fecha
+                            )?.getTime() ?? 0;
+
+                        const dateB =
+                            parseDate(
+                                b.fecha
+                            )?.getTime() ?? 0;
+
+                        return dateB - dateA;
+                    }
+                )[0];
+
+            const montoPagado =
+                lastPayment?.monto ?? 0;
+
+            const totalPagadoAntes =
+                servicePayments
+                    .filter(
+                        (item) =>
+                            item.id !==
+                            lastPayment?.id
+                    )
+                    .reduce(
+                        (sum, item) =>
+                            sum + item.monto,
+                        0
+                    );
+
+            const saldoAnterior =
+                Math.max(
+                    service.precio -
+                        totalPagadoAntes,
+                    0
+                );
+
+            const saldoRestante =
+                Math.max(
+                    saldoAnterior -
+                        montoPagado,
+                    0
+                );
+
+            const reciboNumero =
+                `REC-${Date.now()}`;
+
+            const fechaRecibo =
+                lastPayment?.fecha ||
+                getTodayInputDate();
+
+            await generarYDescargarPDF({
+                tipo: "Recibo",
+                numero: reciboNumero,
+                fecha: fechaRecibo,
+                cliente: {
+                    nombre:
+                        service.clienteNombre,
+                },
+                vehiculo: {
+                    marca:
+                        service.vehiculoNombre
+                            .split(" ")[0],
+                    modelo:
+                        service.vehiculoNombre
+                            .split(" ")
+                            .slice(1)
+                            .join(" ") || "—",
+                    patente:
+                        service.patente,
+                },
+                items: [
+                    {
+                        type: "Servicio",
+                        name: service.tipo,
+                        quantity: 1,
+                        price: service.precio,
+                    },
+                ],
+                laborCost: service.precio,
+                partsCost: 0,
+                total: service.precio,
+                observaciones:
+                    lastPayment?.observaciones ||
+                    service.observaciones,
+                adelanto:
+                    saldoRestante > 0 &&
+                    montoPagado > 0
+                        ? {
+                              importe:
+                                  montoPagado,
+                              medioPago:
+                                  lastPayment
+                                      ?.medioPago ||
+                                  "Efectivo",
+                              fecha: fechaRecibo,
+                          }
+                        : undefined,
+                saldoPendiente:
+                    saldoRestante,
+                nombrePDF: `Recibo_${reciboNumero}_${service.clienteNombre.replace(/\s+/g, "_")}.pdf`,
+            });
+        } catch (error) {
+            console.error(
+                "Error descargando recibo:",
+                error
+            );
+            alert(
+                "No se pudo descargar el recibo."
+            );
+        }
+    };
 
     const generarRecibo = async (
         service: BillingService,
@@ -1406,34 +1412,330 @@ const Facturacion = () => {
         },
     };
 
+    const selectedMonthPayments = useMemo(() => {
+    if (!selectedBillingMonth) {
+        return [];
+    }
+
+    const [year, month] =
+        selectedBillingMonth
+            .split("-")
+            .map(Number);
+
+    return payments.filter((payment) => {
+        const date = parseDate(payment.fecha);
+
+        if (!date) {
+            return false;
+        }
+
+        return (
+            date.getFullYear() === year &&
+            date.getMonth() + 1 === month
+        );
+    });
+}, [
+    payments,
+    selectedBillingMonth,
+]);
+
+const selectedMonthServices = useMemo(() => {
+    if (!selectedBillingMonth) {
+        return [];
+    }
+
+    const [year, month] =
+        selectedBillingMonth
+            .split("-")
+            .map(Number);
+
+    return services.filter((service) => {
+        const date = parseDate(service.fecha);
+
+        if (!date) {
+            return false;
+        }
+
+        return (
+            date.getFullYear() === year &&
+            date.getMonth() + 1 === month
+        );
+    });
+}, [
+    services,
+    selectedBillingMonth,
+]);
+
+    const totalBilled = useMemo(() => 
+        selectedMonthServices
+            .filter(
+                (service) =>
+                    service.estado ===
+                    "Completado"
+            )
+            .reduce(
+                (sum, service) =>
+                    sum + service.precio,
+                0
+            ),
+        [selectedMonthServices]
+    );
+
+    const totalCollected = useMemo(() =>
+        selectedMonthPayments.reduce(
+            (sum, payment) =>
+                sum + payment.monto,
+            0
+        ),
+        [selectedMonthPayments]
+    );
+
+    const totalPending = useMemo(() =>
+        selectedMonthServices
+            .filter(
+                (service) =>
+                    service.estado ===
+                    "Completado"
+            )
+            .reduce(
+                (sum, service) =>
+                    sum +
+                    service.pendienteCobro,
+                0
+            ),
+        [selectedMonthServices]
+    );
+
+    const pendingServices = useMemo(() =>
+        selectedMonthServices.filter(
+            (service) =>
+                service.estado ===
+                    "Pendiente" ||
+                service.estado ===
+                    "En proceso"
+        ).length,
+        [selectedMonthServices]
+    );
+
+    const completedServices = useMemo(() =>
+        selectedMonthServices.filter(
+            (service) =>
+                service.estado ===
+                "Completado"
+        ).length,
+        [selectedMonthServices]
+    );
+
+    const paidServices = useMemo(() =>
+        selectedMonthServices.filter(
+            (service) =>
+                service.estado ===
+                    "Completado" &&
+                service.estadoPago ===
+                    "Pagado"
+        ).length,
+        [selectedMonthServices]
+    );
+
+    const collectionPercentage = useMemo(() =>
+        totalBilled > 0
+            ? Math.min(
+                  Math.round(
+                      (totalCollected /
+                          totalBilled) *
+                          100
+                  ),
+                  100
+              )
+            : 0,
+        [totalBilled, totalCollected]
+    );
+
+    const paymentMethodTotals = useMemo(() =>
+        selectedMonthPayments.reduce<
+            Record<
+                PaymentMethod,
+                number
+            >
+        >(
+            (
+                accumulator,
+                payment
+            ) => {
+                accumulator[
+                    payment.medioPago
+                ] =
+                    (accumulator[
+                        payment.medioPago
+                    ] ?? 0) +
+                    payment.monto;
+
+                return accumulator;
+            },
+            {
+                Efectivo: 0,
+                Transferencia: 0,
+                Tarjeta: 0,
+                "Mercado Pago": 0,
+            }
+        ),
+        [selectedMonthPayments]
+    );
+
+    const totalPayments = useMemo(() =>
+        Object.values(
+            paymentMethodTotals
+        ).reduce(
+            (sum, value) =>
+                sum + value,
+            0
+        ),
+        [paymentMethodTotals]
+    );
+
+    const getPaymentPercentage = (
+        method: PaymentMethod
+    ) => {
+        if (totalPayments <= 0) {
+            return 0;
+        }
+
+        return Math.round(
+            (paymentMethodTotals[
+                method
+            ] /
+                totalPayments) *
+                100
+        );
+    };
+
+    const filteredServices =
+        useMemo(() => {
+            const normalizedSearch =
+                search
+                    .toLowerCase()
+                    .trim();
+
+            return selectedMonthServices.filter(
+                (service) => {
+                    const matchesSearch =
+                        service.id
+                            .toLowerCase()
+                            .includes(
+                                normalizedSearch
+                            ) ||
+                        service.clienteNombre
+                            .toLowerCase()
+                            .includes(
+                                normalizedSearch
+                            ) ||
+                        service.vehiculoNombre
+                            .toLowerCase()
+                            .includes(
+                                normalizedSearch
+                            ) ||
+                        service.patente
+                            .toLowerCase()
+                            .includes(
+                                normalizedSearch
+                            ) ||
+                        service.tipo
+                            .toLowerCase()
+                            .includes(
+                                normalizedSearch
+                            );
+
+                    const matchesStatus =
+                        statusFilter ===
+                            "Todos" ||
+                        service.estado ===
+                            statusFilter;
+
+                    const servicePayments =
+                        selectedMonthPayments.filter(
+                            (payment) =>
+                                payment.servicioId ===
+                                service.id
+                        );
+
+                    const matchesPayment =
+                        paymentFilter ===
+                            "Todos" ||
+                        servicePayments.some(
+                            (payment) =>
+                                payment.medioPago ===
+                                paymentFilter
+                        );
+
+                    return (
+                        matchesSearch &&
+                        matchesStatus &&
+                        matchesPayment
+                    );
+                }
+            );
+        }, [
+            selectedMonthServices,
+            selectedMonthPayments,
+            search,
+            statusFilter,
+            paymentFilter,
+        ]);
+
     return (
         <AdminLayout>
             <div className="mx-auto max-w-[1600px] px-5 py-7 sm:px-8">
 
-                {/* HEADER */}
-                <div className="mb-7 flex flex-col justify-between gap-5 lg:flex-row lg:items-end">
-                    <div>
-                        <div className="mb-2 flex items-center gap-2">
-                            <span className="rounded-lg bg-emerald-50 px-2.5 py-1 text-[11px] font-bold uppercase tracking-wider text-emerald-700">
-                                Administración financiera
-                            </span>
+{/* HEADER */}
+<div className="mb-7 flex flex-col justify-between gap-5 lg:flex-row lg:items-end">
 
-                            <span className="text-xs text-slate-400">
-                                Servicios y cobros
-                            </span>
-                        </div>
+    <div>
+        <div className="mb-2 flex items-center gap-2">
+            <span className="rounded-lg bg-emerald-50 px-2.5 py-1 text-[11px] font-bold uppercase tracking-wider text-emerald-700">
+                Administración financiera
+            </span>
 
-                        <h1 className="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
-                            Facturación
-                        </h1>
+            <span className="text-xs text-slate-400">
+                Servicios y cobros
+            </span>
+        </div>
 
-                        <p className="mt-1 max-w-2xl text-sm text-slate-500">
-                            Controlá los servicios realizados,
-                            cobros pendientes e ingresos del
-                            taller.
-                        </p>
-                    </div>
-                </div>
+        <h1 className="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
+            Facturación
+        </h1>
+
+        <p className="mt-1 max-w-2xl text-sm text-slate-500">
+            Controlá los servicios realizados,
+            cobros pendientes e ingresos del
+            taller.
+        </p>
+    </div>
+
+    <div className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white p-2 shadow-sm">
+
+        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
+            <CalendarDays size={19} />
+        </div>
+
+        <div className="pr-1">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                Período
+            </p>
+
+            <input
+                type="month"
+                value={selectedBillingMonth}
+                onChange={(e) =>
+                    setSelectedBillingMonth(
+                        e.target.value
+                    )
+                }
+                className="mt-0.5 border-0 bg-transparent p-0 text-sm font-bold text-slate-800 outline-none focus:ring-0"
+            />
+        </div>
+
+    </div>
+</div>
 
                 {/* FINANCIAL SUMMARY */}
                 <section className="mb-7 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
@@ -1465,31 +1767,35 @@ const Facturacion = () => {
                             </div>
                         </div>
 
-                        <div className="border-b border-slate-100 p-6 md:border-r xl:border-b-0">
-                            <div className="flex items-start justify-between">
-                                <div>
-                                    <p className="text-sm font-medium text-slate-500">
-                                        Cobrado
-                                    </p>
+<div className="border-b border-slate-100 p-6 md:border-r xl:border-b-0">
+    <div className="flex items-start justify-between gap-4">
 
-                                    <p className="mt-2 text-2xl font-bold tracking-tight text-slate-900">
-                                        {formatCurrency(
-                                            totalCollected
-                                        )}
-                                    </p>
+        <div className="min-w-0">
 
-                                    <div className="mt-3">
-                                        <span className="text-xs text-slate-400">
-                                            Pagos registrados
-                                        </span>
-                                    </div>
-                                </div>
+            <p className="text-sm font-medium text-slate-500">
+                Cobrado
+            </p>
 
-                                <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600">
-                                    <WalletCards size={21} />
-                                </div>
-                            </div>
-                        </div>
+            <p className="mt-2 text-2xl font-bold tracking-tight text-slate-900">
+                {formatCurrency(
+                    totalCollected
+                )}
+            </p>
+
+<div className="mt-3">
+    <span className="text-xs text-slate-400">
+        Cobros del período seleccionado
+    </span>
+</div>
+
+        </div>
+
+        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600">
+            <WalletCards size={21} />
+        </div>
+
+    </div>
+</div>
 
                         <div className="border-b border-slate-100 p-6 xl:border-r xl:border-b-0">
                             <div className="flex items-start justify-between">
@@ -2109,23 +2415,53 @@ const Facturacion = () => {
                                                                     </div>
                                                                 )}
 
-                                                                <button
-                                                                    onClick={() =>
-                                                                        setOpenMenuId(
-                                                                            openMenuId ===
-                                                                                service.id
-                                                                                ? null
-                                                                                : service.id
-                                                                        )
-                                                                    }
-                                                                    className="ml-2 rounded-lg p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
-                                                                >
-                                                                    <MoreHorizontal
-                                                                        size={
-                                                                            18
-                                                                        }
-                                                                    />
-                                                                </button>
+<div className="ml-2 flex items-center gap-1">
+
+    {/* ver detalle */}
+
+        <button
+        type="button"
+        onClick={() =>
+            generarRecibo(service)
+        }
+        className="rounded-lg p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+        title="Ver recibo"
+    >
+        <Eye size={18} />
+    </button>
+    {/* descargar */}
+<button
+    type="button"
+    onClick={() =>
+        descargarReciboPDF(service)
+    }
+    className="rounded-lg p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+    title="Descargar recibo PDF"
+>
+    <FileText size={18} />
+</button>
+
+
+
+    {/* Eliminar */}
+    <button
+        type="button"
+        onClick={() =>
+            handleDeleteService(service)
+        }
+        disabled={
+            processingId === service.id
+        }
+        className="rounded-lg p-2 text-red-400 transition hover:bg-red-50 hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-50"
+        title={
+            processingId === service.id
+                ? "Eliminando..."
+                : "Eliminar servicio"
+        }
+    >
+        <Trash2 size={18} />
+    </button>
+</div>
 
                                                                 {openMenuId ===
                                                                     service.id && (
@@ -2426,26 +2762,25 @@ const Facturacion = () => {
                                             $
                                         </span>
 
-                                        <input
-                                            type="number"
-                                            min="1"
-                                            max={
-                                                selectedService.pendienteCobro
-                                            }
-                                            value={
-                                                paymentAmount
-                                            }
-                                            onChange={(
-                                                e
-                                            ) =>
-                                                setPaymentAmount(
-                                                    e
-                                                        .target
-                                                        .value
-                                                )
-                                            }
-                                            className="w-full rounded-xl border border-slate-200 py-3 pl-8 pr-4 text-sm font-semibold text-slate-800 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10"
-                                        />
+<input
+    type="text"
+    inputMode="numeric"
+    value={
+        paymentAmount
+            ? Number(
+                  paymentAmount
+              ).toLocaleString("es-AR")
+            : ""
+    }
+    onChange={(e) => {
+        const value = e.target.value
+            .replace(/\./g, "")
+            .replace(/\D/g, "");
+
+        setPaymentAmount(value);
+    }}
+    className="w-full rounded-xl border border-slate-200 py-3 pl-8 pr-4 text-sm font-semibold text-slate-800 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10"
+/>
                                     </div>
                                 </div>
 
@@ -2509,7 +2844,7 @@ const Facturacion = () => {
                                             )
                                         }
                                         placeholder="Opcional..."
-                                        className="w-full resize-none rounded-xl border border-slate-200 px-4 py-3 text-sm outline-none placeholder:text-slate-400 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10"
+                                        className="text-slate-700 w-full resize-none rounded-xl border border-slate-200 px-4 py-3 text-sm outline-none placeholder:text-slate-400 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10"
                                     />
                                 </div>
                             </div>

@@ -1260,7 +1260,7 @@ const DashboardAdmin = () => {
                     {/* TURNOS */}
                     {/* ================================================= */}
 
-                    <section className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+    <section className="min-w-0 rounded-2xl border border-slate-200 bg-white shadow-sm">
 
                         <div className="flex flex-col gap-4 border-b border-slate-100 p-5 sm:flex-row sm:items-center sm:justify-between">
                             <div>
@@ -1465,11 +1465,6 @@ const DashboardAdmin = () => {
                                     Últimos movimientos.
                                 </p>
                             </div>
-
-                            <MoreHorizontal
-                                size={19}
-                                className="text-slate-400"
-                            />
                         </div>
 
                         <div className="divide-y divide-slate-100">
@@ -1545,15 +1540,7 @@ const DashboardAdmin = () => {
                             )}
                         </div>
 
-                        <div className="border-t border-slate-100 p-4">
-                            <Link
-                                to="/admin"
-                                className="flex w-full items-center justify-center gap-1 text-sm font-semibold text-blue-600 hover:text-blue-700"
-                            >
-                                Ver actividad
-                                <ChevronRight size={16} />
-                            </Link>
-                        </div>
+
                     </section>
                 </div>
 
@@ -2012,6 +1999,7 @@ const DashboardAdmin = () => {
                     </div>
                 </footer>
             </div>
+            
         </AdminLayout>
     );
 };

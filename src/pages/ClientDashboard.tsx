@@ -1549,13 +1549,6 @@ const availableAppointmentSlots =
             0
         );
 
-    const totalBudgetPending =
-        pendingBudgets.reduce(
-            (total, budget) =>
-                total +
-                Number(budget.total || 0),
-            0
-        );
 
     /* ============================================================
        FECHAS
@@ -2352,89 +2345,6 @@ const availableAppointmentSlots =
 
                     <div className="space-y-6">
 
-                        {/* PRESUPUESTOS */}
-
-                        <section className="rounded-3xl border border-orange-500/20 bg-orange-500/[0.04] p-6">
-
-                            <div className="flex items-center justify-between">
-
-                                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-orange-500/10 text-orange-500">
-                                    <FileText size={18} />
-                                </div>
-
-                                <span className="rounded-full bg-white/5 px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-white/40">
-                                    {pendingBudgets.length
-                                        ? `${pendingBudgets.length} pendiente${
-                                              pendingBudgets.length ===
-                                              1
-                                                  ? ""
-                                                  : "s"
-                                          }`
-                                        : "Sin pendientes"}
-                                </span>
-                            </div>
-
-                            <p className="mt-5 text-xs font-semibold uppercase tracking-[0.15em] text-white/30">
-                                Presupuestos
-                            </p>
-
-                            <h3 className="mt-2 text-2xl font-semibold">
-                                {pendingBudgets.length
-                                    ? formatCurrency(
-                                          totalBudgetPending
-                                      )
-                                    : "Sin presupuestos"}
-                            </h3>
-
-                            <p className="mt-2 text-sm leading-6 text-white/40">
-                                {pendingBudgets.length
-                                    ? "Tenés presupuestos pendientes de revisión."
-                                    : "No tenés presupuestos pendientes de aprobación."}
-                            </p>
-
-                            {pendingBudgets.length >
-                                0 && (
-                                <div className="mt-5 space-y-2">
-                                    {pendingBudgets
-                                        .slice(
-                                            0,
-                                            3
-                                        )
-                                        .map(
-                                            (
-                                                budget
-                                            ) => (
-                                                <div
-                                                    key={
-                                                        budget.id
-                                                    }
-                                                    className="rounded-xl border border-white/[0.06] bg-black/10 p-3"
-                                                >
-                                                    <div className="flex items-center justify-between">
-                                                        <span className="text-xs font-semibold">
-                                                            {
-                                                                budget.numero
-                                                            }
-                                                        </span>
-
-                                                        <span className="text-xs font-semibold text-orange-400">
-                                                            {formatCurrency(
-                                                                budget.total
-                                                            )}
-                                                        </span>
-                                                    </div>
-
-                                                    <p className="mt-1 text-[11px] text-white/35">
-                                                        {budget.vehiculoNombre ||
-                                                            nombreVehiculo}
-                                                    </p>
-                                                </div>
-                                            )
-                                        )}
-                                </div>
-                            )}
-
-                        </section>
 
                         {/* PAGOS */}
 
@@ -2453,7 +2363,7 @@ const availableAppointmentSlots =
 
                                     <p className="text-xs text-white/35">
                                         {payments.length} pagos ·{" "}
-                                        {receipts.length} recibos
+                                        {payments.length} recibos
                                     </p>
                                 </div>
 
@@ -2551,7 +2461,7 @@ const availableAppointmentSlots =
                     <Receipt size={17} />
                 }
                 title="Pagos y comprobantes"
-                description={`${receipts.length} recibos`}
+                description={`${payments.length} recibos`}
             />
         </button>
 

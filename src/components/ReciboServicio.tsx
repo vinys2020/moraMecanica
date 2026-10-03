@@ -1,7 +1,6 @@
 import {
     Car,
     CheckCircle2,
-    Printer,
     X,
 } from "lucide-react";
 
@@ -142,9 +141,6 @@ const ReciboServicio = ({
               )
             : 0;
 
-    const handlePrint = () => {
-        window.print();
-    };
 
     return (
         <div className="fixed inset-0 z-[200] overflow-y-auto bg-slate-950/60 p-4 backdrop-blur-sm">
@@ -536,21 +532,6 @@ const ReciboServicio = ({
                         Cerrar
                     </button>
 
-                    <button
-                        onClick={
-                            handlePrint
-                        }
-                        className="flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-5 py-3 text-sm font-semibold text-white shadow-lg shadow-blue-600/20 transition hover:bg-blue-700"
-                    >
-                        <Printer
-                            size={
-                                17
-                            }
-                        />
-
-
-                        Imprimir / Guardar PDF
-                    </button>
                 </div>
             </div>
         </div>

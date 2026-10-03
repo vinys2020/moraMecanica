@@ -11,6 +11,7 @@ import {
     Phone,
     Search,
     Shield,
+    Trash2,
     UserRound,
     Users,
     X,
@@ -20,14 +21,20 @@ import {
     collection,
     doc,
     getDocs,
+    deleteDoc,
     serverTimestamp,
     updateDoc,
 } from "firebase/firestore";
 
+import {
+    getFunctions,
+    httpsCallable,
+} from "firebase/functions";
+
 import { useEffect, useMemo, useState } from "react";
 
 import AdminLayout from "../components/AdminLayout";
-import { db } from "../config/firebase";
+import { db, app } from "../config/firebase";
 import ModalGeneral from "../components/ModalGeneral";
 
 type UserRole = "admin" | "empleado" | "cliente";
@@ -62,6 +69,9 @@ const Clientes = () => {
     const [users, setUsers] = useState<UserData[]>([]);
     const [vehicles, setVehicles] = useState<Vehicle[]>([]);
 
+    const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+const [deleting, setDeleting] = useState(false);
+
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
 
@@ -69,11 +79,14 @@ const Clientes = () => {
     const [statusFilter, setStatusFilter] =
         useState<StatusFilter>("Todos");
 
+    const [currentPage, setCurrentPage] = useState(1);
+    const clientsPerPage = 10;
+
     const [selectedUser, setSelectedUser] =
         useState<UserData | null>(null);
 
     const [showGeneralModal, setShowGeneralModal] =
-    useState(false);
+        useState(false);
 
     const [showDetailsModal, setShowDetailsModal] =
         useState(false);
@@ -205,9 +218,19 @@ const Clientes = () => {
     */
 
     const clients = useMemo(() => {
-        return users.filter(
-            (user) => user.rol === "cliente"
-        );
+        return users
+            .filter((user) => user.rol === "cliente")
+            .sort((a, b) => {
+                const dateA = a.creadoEn?.toDate
+                    ? a.creadoEn.toDate().getTime()
+                    : new Date(a.creadoEn ?? 0).getTime();
+
+                const dateB = b.creadoEn?.toDate
+                    ? b.creadoEn.toDate().getTime()
+                    : new Date(b.creadoEn ?? 0).getTime();
+
+                return dateB - dateA;
+            });
     }, [users]);
 
     const filteredClients = useMemo(() => {
@@ -251,6 +274,27 @@ const Clientes = () => {
         search,
         statusFilter,
     ]);
+
+    const totalPages = Math.ceil(
+        filteredClients.length / clientsPerPage
+    );
+
+    const paginatedClients = useMemo(() => {
+        const start =
+            (currentPage - 1) * clientsPerPage;
+
+        return filteredClients.slice(
+            start,
+            start + clientsPerPage
+        );
+    }, [
+        filteredClients,
+        currentPage,
+    ]);
+
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [search, statusFilter]);
 
     /*
     |--------------------------------------------------------------------------
@@ -350,10 +394,10 @@ const Clientes = () => {
                 prev.map((item) =>
                     item.uid === user.uid
                         ? {
-                              ...item,
-                              activo:
-                                  newStatus,
-                          }
+                            ...item,
+                            activo:
+                                newStatus,
+                        }
                         : item
                 )
             );
@@ -402,6 +446,8 @@ const Clientes = () => {
         setShowEditModal(true);
     };
 
+    
+
     /*
     |--------------------------------------------------------------------------
     | GUARDAR EDICIÓN
@@ -430,27 +476,27 @@ const Clientes = () => {
                     rol: editUser.rol,
                     actualizadoEn:
                         serverTimestamp(),
-                        activo: editUser.activo,
+                    activo: editUser.activo,
                 }
             );
 
             setUsers((prev) =>
                 prev.map((user) =>
                     user.uid ===
-                    selectedUser.uid
+                        selectedUser.uid
                         ? {
-                              ...user,
-                              nombre:
-                                  editUser.nombre.trim(),
-                              telefono:
-                                  editUser.telefono.trim(),
-                              direccion:
-                                  editUser.direccion.trim(),
-                              rol:
-                                  editUser.rol,
-                                  
-                                activo:editUser.activo,
-                          }
+                            ...user,
+                            nombre:
+                                editUser.nombre.trim(),
+                            telefono:
+                                editUser.telefono.trim(),
+                            direccion:
+                                editUser.direccion.trim(),
+                            rol:
+                                editUser.rol,
+
+                            activo: editUser.activo,
+                        }
                         : user
                 )
             );
@@ -511,12 +557,12 @@ const Clientes = () => {
             setVehicles((prev) =>
                 prev.map((vehicle) =>
                     vehicle.id ===
-                    selectedVehicleId
+                        selectedVehicleId
                         ? {
-                              ...vehicle,
-                              clienteId:
-                                  selectedUser.uid,
-                          }
+                            ...vehicle,
+                            clienteId:
+                                selectedUser.uid,
+                        }
                         : vehicle
                 )
             );
@@ -562,9 +608,9 @@ const Clientes = () => {
                 prev.map((vehicle) =>
                     vehicle.id === vehicleId
                         ? {
-                              ...vehicle,
-                              clienteId: null,
-                          }
+                            ...vehicle,
+                            clienteId: null,
+                        }
                         : vehicle
                 )
             );
@@ -645,6 +691,64 @@ const Clientes = () => {
             return "Sin fecha";
         }
     };
+
+const handleDeleteUser = async () => {
+    if (!selectedUser) return;
+
+    try {
+        setDeleting(true);
+
+        // Conectar con Cloud Functions
+        const functions = getFunctions(app);
+
+        // Referencia a la función desplegada
+        const eliminarUsuario = httpsCallable<
+            { uid: string },
+            {
+                success: boolean;
+                message: string;
+            }
+        >(functions, "eliminarUsuario");
+
+        // 1. Eliminar usuario de Firebase Authentication
+        await eliminarUsuario({
+            uid: selectedUser.uid,
+        });
+
+        // 2. Eliminar documento de Firestore
+        await deleteDoc(
+            doc(
+                db,
+                "usuarios",
+                selectedUser.uid
+            )
+        );
+
+        // 3. Actualizar la tabla sin recargar la página
+        setUsers((current) =>
+            current.filter(
+                (user) =>
+                    user.uid !== selectedUser.uid
+            )
+        );
+
+        setShowDeleteConfirm(false);
+        setShowEditModal(false);
+        setSelectedUser(null);
+
+    } catch (error) {
+        console.error(
+            "Error al eliminar cliente:",
+            error
+        );
+
+        alert(
+            "No se pudo eliminar el cliente."
+        );
+    } finally {
+        setDeleting(false);
+    }
+};
 
     return (
         <AdminLayout>
@@ -810,7 +914,7 @@ const Clientes = () => {
                                     </thead>
 
                                     <tbody>
-                                        {filteredClients.map(
+                                        {paginatedClients.map(
                                             (
                                                 client,
                                                 index
@@ -825,13 +929,12 @@ const Clientes = () => {
                                                         key={
                                                             client.uid
                                                         }
-                                                        className={`group transition hover:bg-slate-50 ${
-                                                            index !==
-                                                            filteredClients.length -
+                                                        className={`group transition hover:bg-slate-50 ${index !==
+                                                                paginatedClients.length -
                                                                 1
                                                                 ? "border-b border-slate-100"
                                                                 : ""
-                                                        }`}
+                                                            }`}
                                                     >
                                                         {/* CLIENT */}
                                                         <td className="px-5 py-4">
@@ -902,7 +1005,7 @@ const Clientes = () => {
 
                                                                 <span className="text-xs text-slate-400">
                                                                     {clientVehicles.length ===
-                                                                    1
+                                                                        1
                                                                         ? "vehículo"
                                                                         : "vehículos"}
                                                                 </span>
@@ -947,18 +1050,16 @@ const Clientes = () => {
                                                                 disabled={
                                                                     saving
                                                                 }
-                                                                className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold transition ${
-                                                                    client.activo
+                                                                className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold transition ${client.activo
                                                                         ? "bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
                                                                         : "bg-amber-50 text-amber-700 hover:bg-amber-100"
-                                                                }`}
+                                                                    }`}
                                                             >
                                                                 <span
-                                                                    className={`h-1.5 w-1.5 rounded-full ${
-                                                                        client.activo
+                                                                    className={`h-1.5 w-1.5 rounded-full ${client.activo
                                                                             ? "bg-emerald-500"
                                                                             : "bg-amber-500"
-                                                                    }`}
+                                                                        }`}
                                                                 />
 
                                                                 {client.activo
@@ -967,36 +1068,36 @@ const Clientes = () => {
                                                             </button>
                                                         </td>
 
-                                 {/* ACTIONS */}
-<td className="px-5 py-4">
-    <div className="flex items-center justify-end gap-1">
+                                                        {/* ACTIONS */}
+                                                        <td className="px-5 py-4">
+                                                            <div className="flex items-center justify-end gap-1">
 
-        {/* Ver / editar cliente - EXISTENTE */}
-        <button
-            onClick={() =>
-                openDetails(client)
-            }
-            className="rounded-lg p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
-            title="Ver cliente"
-        >
-            <Edit3 size={18} />
-        </button>
+                                                                {/* Ver / editar cliente - EXISTENTE */}
+                                                                <button
+                                                                    onClick={() =>
+                                                                        openDetails(client)
+                                                                    }
+                                                                    className="rounded-lg p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+                                                                    title="Ver cliente"
+                                                                >
+                                                                    <Edit3 size={18} />
+                                                                </button>
 
-        {/* Modal General - NUEVO */}
-{/* Modal General */}
-<button
-    onClick={() => {
-        setSelectedUser(client);
-        setShowGeneralModal(true);
-    }}
-    className="rounded-lg p-2 text-slate-400 transition hover:bg-blue-50 hover:text-blue-600"
-    title="Configurar cliente"
->
-    <UserRound size={18} />
-</button>
+                                                                {/* Modal General - NUEVO */}
+                                                                {/* Modal General */}
+                                                                <button
+                                                                    onClick={() => {
+                                                                        setSelectedUser(client);
+                                                                        setShowGeneralModal(true);
+                                                                    }}
+                                                                    className="rounded-lg p-2 text-slate-400 transition hover:bg-blue-50 hover:text-blue-600"
+                                                                    title="Configurar cliente"
+                                                                >
+                                                                    <UserRound size={18} />
+                                                                </button>
 
-    </div>
-</td>
+                                                            </div>
+                                                        </td>
                                                     </tr>
                                                 );
                                             }
@@ -1023,44 +1124,79 @@ const Clientes = () => {
                             )}
 
                             {/* FOOTER */}
+                            {/* FOOTER */}
                             <div className="flex flex-col justify-between gap-4 border-t border-slate-100 px-5 py-4 sm:flex-row sm:items-center">
                                 <p className="text-xs text-slate-400">
                                     Mostrando{" "}
-                                    {
+                                    {filteredClients.length === 0
+                                        ? 0
+                                        : (currentPage - 1) * clientsPerPage + 1}{" "}
+                                    -{" "}
+                                    {Math.min(
+                                        currentPage * clientsPerPage,
                                         filteredClients.length
-                                    }{" "}
+                                    )}{" "}
                                     de{" "}
-                                    {
-                                        clients.length
-                                    }{" "}
+                                    {filteredClients.length}{" "}
                                     clientes
                                 </p>
 
-                                <div className="flex items-center gap-2">
-                                    <button className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 text-slate-400 hover:bg-slate-50">
-                                        <ChevronLeft
-                                            size={16}
-                                        />
-                                    </button>
+                                {totalPages > 1 && (
+                                    <div className="flex items-center gap-2">
+                                        {/* ANTERIOR */}
+                                        <button
+                                            type="button"
+                                            onClick={() =>
+                                                setCurrentPage((page) =>
+                                                    Math.max(page - 1, 1)
+                                                )
+                                            }
+                                            disabled={currentPage === 1}
+                                            className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 text-slate-400 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+                                        >
+                                            <ChevronLeft size={16} />
+                                        </button>
 
-                                    <button className="flex h-9 w-9 items-center justify-center rounded-lg bg-blue-600 text-xs font-semibold text-white">
-                                        1
-                                    </button>
+                                        {/* PÁGINAS */}
+                                        {Array.from(
+                                            { length: totalPages },
+                                            (_, index) => index + 1
+                                        ).map((page) => (
+                                            <button
+                                                key={page}
+                                                type="button"
+                                                onClick={() =>
+                                                    setCurrentPage(page)
+                                                }
+                                                className={`flex h-9 min-w-9 items-center justify-center rounded-lg px-2 text-xs font-semibold transition ${currentPage === page
+                                                        ? "bg-blue-600 text-white"
+                                                        : "border border-slate-200 text-slate-600 hover:bg-slate-50"
+                                                    }`}
+                                            >
+                                                {page}
+                                            </button>
+                                        ))}
 
-                                    <button className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 text-xs font-medium text-slate-600 hover:bg-slate-50">
-                                        2
-                                    </button>
-
-                                    <button className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 text-xs font-medium text-slate-600 hover:bg-slate-50">
-                                        3
-                                    </button>
-
-                                    <button className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 text-slate-400 hover:bg-slate-50">
-                                        <ChevronRight
-                                            size={16}
-                                        />
-                                    </button>
-                                </div>
+                                        {/* SIGUIENTE */}
+                                        <button
+                                            type="button"
+                                            onClick={() =>
+                                                setCurrentPage((page) =>
+                                                    Math.min(
+                                                        page + 1,
+                                                        totalPages
+                                                    )
+                                                )
+                                            }
+                                            disabled={
+                                                currentPage === totalPages
+                                            }
+                                            className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 text-slate-400 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+                                        >
+                                            <ChevronRight size={16} />
+                                        </button>
+                                    </div>
+                                )}
                             </div>
                         </>
                     )}
@@ -1159,18 +1295,16 @@ const Clientes = () => {
                                                     )
                                                 }
                                                 disabled={saving}
-                                                className={`inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-semibold ${
-                                                    selectedUser.activo
+                                                className={`inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-semibold ${selectedUser.activo
                                                         ? "bg-emerald-50 text-emerald-700"
                                                         : "bg-amber-50 text-amber-700"
-                                                }`}
+                                                    }`}
                                             >
                                                 <span
-                                                    className={`h-2 w-2 rounded-full ${
-                                                        selectedUser.activo
+                                                    className={`h-2 w-2 rounded-full ${selectedUser.activo
                                                             ? "bg-emerald-500"
                                                             : "bg-amber-500"
-                                                    }`}
+                                                        }`}
                                                 />
 
                                                 {selectedUser.activo
@@ -1291,21 +1425,21 @@ const Clientes = () => {
                                             selectedUser.uid
                                         ).length ===
                                             0 && (
-                                            <div className="rounded-xl border border-dashed border-slate-200 px-5 py-10 text-center">
-                                                <Car
-                                                    size={25}
-                                                    className="mx-auto text-slate-300"
-                                                />
+                                                <div className="rounded-xl border border-dashed border-slate-200 px-5 py-10 text-center">
+                                                    <Car
+                                                        size={25}
+                                                        className="mx-auto text-slate-300"
+                                                    />
 
-                                                <p className="mt-3 text-sm font-semibold text-slate-700">
-                                                    Sin vehículos asignados
-                                                </p>
+                                                    <p className="mt-3 text-sm font-semibold text-slate-700">
+                                                        Sin vehículos asignados
+                                                    </p>
 
-                                                <p className="mt-1 text-xs text-slate-400">
-                                                    Podés asignarle un vehículo existente desde el botón de arriba.
-                                                </p>
-                                            </div>
-                                        )}
+                                                    <p className="mt-1 text-xs text-slate-400">
+                                                        Podés asignarle un vehículo existente desde el botón de arriba.
+                                                    </p>
+                                                </div>
+                                            )}
                                     </div>
                                 </div>
                             </div>
@@ -1342,11 +1476,12 @@ const Clientes = () => {
             {/* MODAL EDITAR */}
             {/* ========================================================= */}
 
-            {showEditModal &&
+{showEditModal &&
     selectedUser && (
         <div className="fixed inset-0 z-[110] flex items-center justify-center bg-slate-950/50 p-4 backdrop-blur-sm text-black">
             <div className="w-full max-w-xl overflow-hidden rounded-2xl bg-white shadow-2xl">
 
+                {/* HEADER */}
                 <div className="flex items-center justify-between border-b border-slate-100 px-6 py-5">
                     <div>
                         <p className="text-xs font-semibold uppercase tracking-wider text-blue-600">
@@ -1359,17 +1494,17 @@ const Clientes = () => {
                     </div>
 
                     <button
-                        onClick={() =>
-                            setShowEditModal(
-                                false
-                            )
-                        }
+                        onClick={() => {
+                            setShowEditModal(false);
+                            setShowDeleteConfirm(false);
+                        }}
                         className="rounded-xl p-2 text-slate-400 hover:bg-slate-100"
                     >
                         <X size={20} />
                     </button>
                 </div>
 
+                {/* CONTENIDO */}
                 <div className="space-y-5 p-6">
 
                     {/* NOMBRE */}
@@ -1379,17 +1514,12 @@ const Clientes = () => {
                         </label>
 
                         <input
-                            value={
-                                editUser.nombre
-                            }
+                            value={editUser.nombre}
                             onChange={(e) =>
-                                setEditUser(
-                                    {
-                                        ...editUser,
-                                        nombre:
-                                            e.target.value,
-                                    }
-                                )
+                                setEditUser({
+                                    ...editUser,
+                                    nombre: e.target.value,
+                                })
                             }
                             className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10"
                         />
@@ -1402,17 +1532,12 @@ const Clientes = () => {
                         </label>
 
                         <input
-                            value={
-                                editUser.telefono
-                            }
+                            value={editUser.telefono}
                             onChange={(e) =>
-                                setEditUser(
-                                    {
-                                        ...editUser,
-                                        telefono:
-                                            e.target.value,
-                                    }
-                                )
+                                setEditUser({
+                                    ...editUser,
+                                    telefono: e.target.value,
+                                })
                             }
                             className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10"
                         />
@@ -1425,17 +1550,12 @@ const Clientes = () => {
                         </label>
 
                         <input
-                            value={
-                                editUser.direccion
-                            }
+                            value={editUser.direccion}
                             onChange={(e) =>
-                                setEditUser(
-                                    {
-                                        ...editUser,
-                                        direccion:
-                                            e.target.value,
-                                    }
-                                )
+                                setEditUser({
+                                    ...editUser,
+                                    direccion: e.target.value,
+                                })
                             }
                             className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10"
                         />
@@ -1449,17 +1569,13 @@ const Clientes = () => {
 
                         <div className="relative">
                             <select
-                                value={
-                                    editUser.rol
-                                }
+                                value={editUser.rol}
                                 onChange={(e) =>
-                                    setEditUser(
-                                        {
-                                            ...editUser,
-                                            rol:
-                                                e.target.value as UserRole,
-                                        }
-                                    )
+                                    setEditUser({
+                                        ...editUser,
+                                        rol:
+                                            e.target.value as UserRole,
+                                    })
                                 }
                                 className="w-full appearance-none rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10"
                             >
@@ -1497,14 +1613,12 @@ const Clientes = () => {
                                         : "inactivo"
                                 }
                                 onChange={(e) =>
-                                    setEditUser(
-                                        {
-                                            ...editUser,
-                                            activo:
-                                                e.target.value ===
-                                                "activo",
-                                        }
-                                    )
+                                    setEditUser({
+                                        ...editUser,
+                                        activo:
+                                            e.target.value ===
+                                            "activo",
+                                    })
                                 }
                                 className={`w-full appearance-none rounded-xl border bg-white px-4 py-3 pr-10 text-sm outline-none focus:ring-4 ${
                                     editUser.activo
@@ -1539,53 +1653,104 @@ const Clientes = () => {
                         )}
                     </div>
 
-                    {/* EMAIL */}
-                    <div className="rounded-xl bg-slate-50 p-4">
-                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
-                            Email
-                        </p>
 
-                        <p className="mt-1 text-sm text-slate-700">
-                            {
-                                selectedUser.email
-                            }
-                        </p>
-
-                        <p className="mt-3 text-xs text-slate-400">
-                            El email pertenece a Firebase Authentication y no se modifica desde este formulario.
-                        </p>
-                    </div>
                 </div>
 
-                <div className="flex justify-end gap-3 border-t border-slate-100 bg-slate-50/70 px-6 py-4">
+                {/* FOOTER */}
+                <div className="border-t border-slate-100 bg-slate-50/70 px-6 py-4">
 
-                    <button
-                        onClick={() =>
-                            setShowEditModal(
-                                false
-                            )
-                        }
-                        className="rounded-xl border border-slate-200 bg-white px-5 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-50"
-                    >
-                        Cancelar
-                    </button>
+                    {!showDeleteConfirm ? (
+                        <div className="flex items-center justify-between">
 
-                    <button
-                        onClick={
-                            handleUpdateUser
-                        }
-                        disabled={
-                            saving
-                        }
-                        className="flex items-center gap-2 rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-blue-600/20 hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
-                    >
-                        <Check size={16} />
+                            {/* ELIMINAR */}
+                            <button
+                                onClick={() =>
+                                    setShowDeleteConfirm(true)
+                                }
+                                className="flex items-center gap-2 rounded-xl border border-red-200 bg-white px-4 py-2.5 text-sm font-semibold text-red-600 hover:bg-red-50"
+                            >
+                                <Trash2 size={16} />
 
-                        {saving
-                            ? "Guardando..."
-                            : "Guardar cambios"}
-                    </button>
+                                Eliminar cliente
+                            </button>
 
+                            {/* ACCIONES */}
+                            <div className="flex gap-3">
+
+                                <button
+                                    onClick={() =>
+                                        setShowEditModal(false)
+                                    }
+                                    className="rounded-xl border border-slate-200 bg-white px-5 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-50"
+                                >
+                                    Cancelar
+                                </button>
+
+                                <button
+                                    onClick={handleUpdateUser}
+                                    disabled={saving}
+                                    className="flex items-center gap-2 rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white shadow-lg shadow-blue-600/20 hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+                                >
+                                    <Check size={16} />
+
+                                    {saving
+                                        ? "Guardando..."
+                                        : "Guardar cambios"}
+                                </button>
+
+                            </div>
+                        </div>
+                    ) : (
+                        /* SEGUNDA CONFIRMACIÓN */
+                        <div className="rounded-xl border border-red-200 bg-red-50 p-4">
+
+                            <div className="flex items-start gap-3">
+
+                                <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-red-100 text-red-600">
+                                    <Trash2 size={18} />
+                                </div>
+
+                                <div className="flex-1">
+
+                                    <h3 className="text-sm font-bold text-red-800">
+                                        ¿Eliminar este cliente?
+                                    </h3>
+
+                                    <p className="mt-1 text-xs leading-relaxed text-red-700">
+                                        Vas a eliminar permanentemente el
+                                        registro de este cliente. Esta acción
+                                        no se puede deshacer.
+                                    </p>
+
+                                    <div className="mt-4 flex justify-end gap-2">
+
+                                        <button
+                                            onClick={() =>
+                                                setShowDeleteConfirm(false)
+                                            }
+                                            disabled={deleting}
+                                            className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-60"
+                                        >
+                                            Cancelar
+                                        </button>
+
+                                        <button
+                                            onClick={handleDeleteUser}
+                                            disabled={deleting}
+                                            className="flex items-center gap-2 rounded-xl bg-red-600 px-4 py-2 text-sm font-semibold text-white shadow-lg shadow-red-600/20 hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-60"
+                                        >
+                                            <Trash2 size={16} />
+
+                                            {deleting
+                                                ? "Eliminando..."
+                                                : "Sí, eliminar cliente"}
+                                        </button>
+
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
                 </div>
             </div>
         </div>
@@ -1661,7 +1826,7 @@ const Clientes = () => {
                                                 ) =>
                                                     !vehicle.clienteId ||
                                                     vehicle.clienteId ===
-                                                        selectedUser.uid
+                                                    selectedUser.uid
                                             )
                                             .map(
                                                 (
@@ -1700,18 +1865,18 @@ const Clientes = () => {
                                     (vehicle) =>
                                         !vehicle.clienteId ||
                                         vehicle.clienteId ===
-                                            selectedUser.uid
+                                        selectedUser.uid
                                 ).length === 0 && (
-                                    <div className="mt-3 rounded-xl border border-amber-100 bg-amber-50 px-4 py-3">
-                                        <p className="text-xs font-medium text-amber-700">
-                                            No hay vehículos disponibles para asignar.
-                                        </p>
+                                        <div className="mt-3 rounded-xl border border-amber-100 bg-amber-50 px-4 py-3">
+                                            <p className="text-xs font-medium text-amber-700">
+                                                No hay vehículos disponibles para asignar.
+                                            </p>
 
-                                        <p className="mt-1 text-xs text-amber-600">
-                                            Primero creá el vehículo desde la sección Vehículos.
-                                        </p>
-                                    </div>
-                                )}
+                                            <p className="mt-1 text-xs text-amber-600">
+                                                Primero creá el vehículo desde la sección Vehículos.
+                                            </p>
+                                        </div>
+                                    )}
                             </div>
 
                             <div className="flex justify-end gap-3 border-t border-slate-100 bg-slate-50/70 px-6 py-4">
@@ -1746,24 +1911,24 @@ const Clientes = () => {
                     </div>
                 )}
 
-                {/* ========================================================= */}
-{/* MODAL GENERAL */}
-{/* ========================================================= */}
+            {/* ========================================================= */}
+            {/* MODAL GENERAL */}
+            {/* ========================================================= */}
 
-{showGeneralModal &&
-    selectedUser && (
-        <ModalGeneral
-            selectedUser={selectedUser}
-            vehicles={vehicles}
-            onClose={() =>
-                setShowGeneralModal(false)
-            }
-            onSaved={async () => {
-                await cargarUsuarios();
-                await cargarVehiculos();
-            }}
-        />
-    )}
+            {showGeneralModal &&
+                selectedUser && (
+                    <ModalGeneral
+                        selectedUser={selectedUser}
+                        vehicles={vehicles}
+                        onClose={() =>
+                            setShowGeneralModal(false)
+                        }
+                        onSaved={async () => {
+                            await cargarUsuarios();
+                            await cargarVehiculos();
+                        }}
+                    />
+                )}
         </AdminLayout>
     );
 };

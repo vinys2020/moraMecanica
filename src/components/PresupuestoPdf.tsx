@@ -14,6 +14,8 @@ interface PdfProps {
 
     numero: string;
 
+    logoUrl?: string;
+
     selectedClient?: {
         nombre: string;
         email: string;
@@ -114,6 +116,7 @@ const Pdf = async ({
     budgetTotal,
     notes,
     partsPdf,
+    logoUrl,
     formatCurrency,
     formatDate,
     advancePayment,
@@ -126,6 +129,40 @@ const Pdf = async ({
 
     const pdf =
         await PDFDocument.create();
+
+        let logoImage = null;
+
+        const logoToUse = logoUrl || "/logonbg.jpeg";
+
+        try {
+            const response =
+                await fetch(logoToUse);
+
+            const logoBytes =
+                await response.arrayBuffer();
+
+            const imageUrl = logoToUse.toLowerCase();
+
+            if (imageUrl.endsWith(".png")) {
+                logoImage =
+                    await pdf.embedPng(
+                        logoBytes
+                    );
+            } else if (
+                imageUrl.endsWith(".jpg") ||
+                imageUrl.endsWith(".jpeg")
+            ) {
+                logoImage =
+                    await pdf.embedJpg(
+                        logoBytes
+                    );
+            }
+        } catch (error) {
+            console.error(
+                "No se pudo cargar el logo:",
+                error
+            );
+        }
 
 
     /* =====================================================
@@ -225,7 +262,7 @@ const Pdf = async ({
         x1 = MARGIN_X,
         x2 = PAGE_WIDTH - MARGIN_X,
         thickness = 0.7,
-        color = LIGHT_GRAY
+        color = BLACK
     ) => {
 
         currentPage.drawLine({
@@ -247,37 +284,54 @@ const Pdf = async ({
     };
 
 
-    const drawPageHeader = () => {
+const drawPageHeader = () => {
+    if (logoImage) {
+        const logoWidth = 110;
+        const logoHeight =
+            (logoImage.height /
+                logoImage.width) *
+            logoWidth;
 
+        currentPage.drawImage(
+            logoImage,
+            {
+                x: MARGIN_X,
+                y:
+                    PAGE_HEIGHT -
+                    logoHeight -
+                    10,
+                width: logoWidth,
+                height: logoHeight,
+            }
+        );
+    } else {
         drawText(
             "MORA MECÁNICA",
             MARGIN_X,
-            PAGE_HEIGHT - 48,
+            PAGE_HEIGHT - 30,
             18,
             boldFont,
             BLACK
         );
+    }
 
+    drawText(
+        "PRESUPUESTO",
+        PAGE_WIDTH - MARGIN_X - 100,
+        PAGE_HEIGHT - 30,
+        13,
+        boldFont,
+        rgb(0.2, 0.4, 0.85)
+    );
 
-        drawText(
-            "",
-            PAGE_WIDTH - 160,
-            PAGE_HEIGHT - 47,
-            12,
-            boldFont,
-            DARK_GRAY
-        );
-
-
-        drawLine(
-            PAGE_HEIGHT - 65,
-            MARGIN_X,
-            PAGE_WIDTH - MARGIN_X,
-            1,
-            BLACK
-        );
-
-    };
+    drawLine(
+        PAGE_HEIGHT - 60,
+        MARGIN_X,
+        PAGE_WIDTH - MARGIN_X,
+        1,
+        BLACK
+    );
+};
 
 
     /* =====================================================
@@ -305,62 +359,52 @@ const Pdf = async ({
             color: BLACK,
         });
 
-
         drawText(
             "CONCEPTO",
             TABLE_LEFT + 10,
             y - 15,
-            7.5,
+            8,
             boldFont,
             WHITE
         );
-
 
         drawText(
             "TIPO",
             315,
             y - 15,
-            7.5,
+            8,
             boldFont,
             WHITE
         );
-
 
         drawText(
             "CANT.",
             375,
             y - 15,
-            7.5,
+            8,
             boldFont,
             WHITE
         );
-
 
         drawText(
             "PRECIO",
             420,
             y - 15,
-            7.5,
+            8,
             boldFont,
             WHITE
         );
-
 
         drawText(
             "IMPORTE",
             490,
             y - 15,
-            7.5,
+            8,
             boldFont,
             WHITE
         );
 
-
-        /*
-         * Dejamos más espacio debajo del TH
-         * para que la primera fila no quede pegada.
-         */
-        y -= 34;
+        y -= 30;
 
     };
 
@@ -389,17 +433,19 @@ const Pdf = async ({
 
 
     /* =====================================================
-       DATOS DEL 
+       DATOS DEL PRESUPUESTO
     ===================================================== */
 
+    y = PAGE_HEIGHT - 75;
+
     drawText(
-        `: ${numero}`,
+        `Nro: ${numero}`,
         MARGIN_X,
         y,
         9,
-        boldFont
+        boldFont,
+        DARK_GRAY
     );
-
 
     drawText(
         `Fecha: ${formatDate(
@@ -407,19 +453,18 @@ const Pdf = async ({
                 .toISOString()
                 .split("T")[0]
         )}`,
-        300,
+        PAGE_WIDTH - MARGIN_X - 130,
         y,
         9,
         regularFont,
         DARK_GRAY
     );
 
-
-    y -= 28;
+    y -= 32;
 
 
     /* =====================================================
-       CLIENTE
+       CLIENTE Y VEHÍCULO
     ===================================================== */
 
     drawText(
@@ -431,19 +476,16 @@ const Pdf = async ({
         GRAY
     );
 
-
-    y -= 14;
-
+    y -= 16;
 
     drawText(
         selectedClient?.nombre ||
             "Sin cliente",
         MARGIN_X,
         y,
-        10,
+        11,
         boldFont
     );
-
 
     if (
         selectedClient?.email
@@ -453,38 +495,34 @@ const Pdf = async ({
             selectedClient.email,
             MARGIN_X,
             y - 14,
-            8.5,
+            8,
             regularFont,
             DARK_GRAY
         );
 
     }
 
-
-    /* =====================================================
-       VEHÍCULO
-    ===================================================== */
-
+    // Vehículo en la derecha
+    const clienteLabelY = y + (selectedClient?.email ? 30 : 16);
+    
     drawText(
         "VEHÍCULO",
         315,
-        y + 14,
+        clienteLabelY,
         8,
         boldFont,
         GRAY
     );
-
 
     drawText(
         selectedVehicle
             ? `${selectedVehicle.marca} ${selectedVehicle.modelo}`
             : "Sin vehículo",
         315,
-        y,
-        10,
+        clienteLabelY - 16,
+        11,
         boldFont
     );
-
 
     if (
         selectedVehicle?.patente
@@ -493,16 +531,15 @@ const Pdf = async ({
         drawText(
             `Patente: ${selectedVehicle.patente}`,
             315,
-            y - 14,
-            8.5,
+            clienteLabelY - 30,
+            8,
             regularFont,
             DARK_GRAY
         );
 
     }
 
-
-    y -= 48;
+    y -= 42;
 
 
     /* =====================================================
@@ -682,21 +719,18 @@ const Pdf = async ({
 
     }
 
-
-    y -= 12;
-
+    y -= 16;
 
     drawText(
         "RESUMEN DE COSTOS",
         MARGIN_X,
         y,
-        9,
-        boldFont
+        10,
+        boldFont,
+        DARK_GRAY
     );
 
-
-    y -= 24;
-
+    y -= 26;
 
     drawText(
         "Mano de obra",
@@ -707,7 +741,6 @@ const Pdf = async ({
         DARK_GRAY
     );
 
-
     drawText(
         formatCurrency(
             laborCost
@@ -715,12 +748,10 @@ const Pdf = async ({
         485,
         y,
         9,
-        regularFont
+        boldFont
     );
 
-
     y -= 20;
-
 
     drawText(
         "Repuestos",
@@ -731,7 +762,6 @@ const Pdf = async ({
         DARK_GRAY
     );
 
-
     drawText(
         formatCurrency(
             partsCost
@@ -739,33 +769,28 @@ const Pdf = async ({
         485,
         y,
         9,
-        regularFont
+        boldFont
     );
 
-
-    y -= 12;
-
+    y -= 14;
 
     drawLine(
         y,
         345,
         PAGE_WIDTH - MARGIN_X,
         1,
-        BLACK
+        LIGHT_GRAY
     );
 
-
-    y -= 25;
-
+    y -= 22;
 
     drawText(
-        "TOTAL PRESUPUESTADO",
+        "TOTAL",
         345,
         y,
-        10,
+        11,
         boldFont
     );
-
 
     drawText(
         formatCurrency(
@@ -773,7 +798,7 @@ const Pdf = async ({
         ),
         475,
         y,
-        12,
+        13,
         boldFont
     );
 
@@ -783,7 +808,7 @@ const Pdf = async ({
     ===================================================== */
 
     if (advancePayment && advancePayment.importe > 0) {
-        y -= 30;
+        y -= 32;
 
         drawText(
             "ADELANTO RECIBIDO",
@@ -800,12 +825,12 @@ const Pdf = async ({
             ),
             485,
             y,
-            9,
+            10,
             boldFont,
             rgb(0.16, 0.7, 0.38)
         );
 
-        y -= 18;
+        y -= 20;
 
         drawText(
             `Medio: ${advancePayment.medioPago}`,
@@ -834,16 +859,16 @@ const Pdf = async ({
             345,
             PAGE_WIDTH - MARGIN_X,
             1,
-            rgb(0.92, 0.92, 0.92)
+            LIGHT_GRAY
         );
 
-        y -= 20;
+        y -= 22;
 
         drawText(
             "SALDO PENDIENTE",
             345,
             y,
-            10,
+            11,
             boldFont,
             rgb(0.85, 0.2, 0.2)
         );
@@ -859,7 +884,7 @@ const Pdf = async ({
             ),
             475,
             y,
-            12,
+            13,
             boldFont,
             rgb(0.85, 0.2, 0.2)
         );
@@ -870,8 +895,7 @@ const Pdf = async ({
        OBSERVACIONES
     ===================================================== */
 
-    y -= 45;
-
+    y -= 36;
 
     if (
         notes.trim()
@@ -882,11 +906,11 @@ const Pdf = async ({
             MARGIN_X,
             y,
             9,
-            boldFont
+            boldFont,
+            DARK_GRAY
         );
 
-
-        y -= 17;
+        y -= 18;
 
 
         const noteLines =

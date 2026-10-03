@@ -4,6 +4,7 @@ interface GenerarPDFOptions {
     tipo: "Presupuesto" | "Recibo" | "Factura" | "Comprobante";
     numero: string;
     fecha: string;
+    logoUrl?: string;
     cliente: {
         nombre: string;
         email?: string;
@@ -57,6 +58,7 @@ export const generarYDescargarPDF = async (
         const pdfBytes = await DocumentoPDF({
             tipo: options.tipo,
             numero: options.numero,
+            logoUrl: options.logoUrl,
             fecha: options.fecha,
             cliente: options.cliente,
             vehiculo: options.vehiculo,
