@@ -55,6 +55,13 @@ type ServiceCategory =
     | "Neumáticos"
     | "Otro";
 
+interface BudgetItem {
+    type: "Servicio" | "Repuesto";
+    name: string;
+    quantity: number;
+    price: number;
+}
+
 interface Vehicle {
     id: string;
     marca: string;
@@ -77,6 +84,7 @@ interface Service {
     vehiculoNombre: string;
     patente: string;
     imagenUrl: string;
+    imagenVehiculoUrl?: string;
     tipo: string;
     categoria: ServiceCategory;
     descripcion: string;
@@ -86,7 +94,18 @@ interface Service {
     precio: number;
     estado: ServiceStatus;
     observaciones: string;
+    proximoServicio?: string | null;
+    proximoServicioFecha?: string | null;
+    proximoServicioKilometraje?: number | null;
     creadoEn: any;
+    presupuestoItems?: BudgetItem[];
+    manoObra?: number;
+    costoRepuestos?: number;
+    presupuestoTotal?: number;
+    presupuestoObservaciones?: string;
+    presupuestoValidoHasta?: string | null;
+    pdfRepuestosUrl?: string;
+    clientePagaRepuestosDirectamente?: boolean;
     facturado: false,
 facturaId: null,
 }
@@ -165,18 +184,23 @@ const [deleting, setDeleting] =
        FORM
     ======================================================== */
 
-    const [newService, setNewService] = useState({
-        vehiculoId: "",
-        tipo: "",
-        categoria: "" as ServiceCategory | "",
-        descripcion: "",
-        fecha: getTodayInputDate(),
-        fechaEntregaEstimada: "",
-        kilometraje: "",
-        precio: "",
-        estado: "En proceso" as ServiceStatus,
-        observaciones: "",
-    });
+const [newService, setNewService] = useState({
+    vehiculoId: "",
+    tipo: "",
+    categoria: "" as ServiceCategory | "",
+    descripcion: "",
+    fecha: getTodayInputDate(),
+    fechaEntregaEstimada: "",
+    kilometraje: "",
+    precio: "",
+    estado: "En proceso" as ServiceStatus,
+    observaciones: "",
+
+    // PRÓXIMO SERVICIO
+    proximoServicio: "",
+    proximoServicioFecha: "",
+    proximoServicioKilometraje: "",
+});
 
     /* ============================================================
        LOAD DATA
@@ -344,9 +368,14 @@ setVehicles(vehiculosData);
                             "",
 
                         imagenUrl:
-                            data.imagenUrl ??
-                            vehicle?.imagenUrl ??
+                            (typeof data.imagenUrl === "string" &&
+                            data.imagenUrl.trim()) ||
+                            (typeof vehicle?.imagenUrl === "string" &&
+                            vehicle.imagenUrl.trim()) ||
                             "",
+
+                        imagenVehiculoUrl:
+                            vehicle?.imagenUrl ?? "",
 
                         tipo:
                             data.tipo ??
@@ -369,6 +398,17 @@ setVehicles(vehiculosData);
                             data.fechaEntregaEstimada ??
                             null,
 
+                        proximoServicio:
+                            data.proximoServicio ?? null,
+
+                        proximoServicioFecha:
+                            data.proximoServicioFecha ?? null,
+
+                        proximoServicioKilometraje:
+                            data.proximoServicioKilometraje == null
+                                ? null
+                                : Number(data.proximoServicioKilometraje),
+
                         kilometraje:
                             Number(
                                 data.kilometraje ?? 0
@@ -378,6 +418,38 @@ setVehicles(vehiculosData);
                             Number(
                                 data.precio ?? 0
                             ),
+
+                        presupuestoItems:
+                            Array.isArray(data.presupuestoItems)
+                                ? data.presupuestoItems
+                                : [],
+
+                        manoObra:
+                            data.manoObra == null
+                                ? undefined
+                                : Number(data.manoObra) || 0,
+
+                        costoRepuestos:
+                            data.costoRepuestos == null
+                                ? undefined
+                                : Number(data.costoRepuestos) || 0,
+
+                        presupuestoTotal:
+                            data.presupuestoTotal == null
+                                ? undefined
+                                : Number(data.presupuestoTotal) || 0,
+
+                        presupuestoObservaciones:
+                            data.presupuestoObservaciones ?? "",
+
+                        presupuestoValidoHasta:
+                            data.presupuestoValidoHasta ?? null,
+
+                        pdfRepuestosUrl:
+                            data.pdfRepuestosUrl ?? "",
+
+                        clientePagaRepuestosDirectamente:
+                            data.clientePagaRepuestosDirectamente === true,
 
                         estado:
                             normalizeStatus(
@@ -685,6 +757,21 @@ const filteredServices = useMemo(() => {
                                 .fechaEntregaEstimada ||
                             null,
 
+                        proximoServicio:
+                            newService.proximoServicio.trim() ||
+                            null,
+
+                        proximoServicioFecha:
+                            newService.proximoServicioFecha ||
+                            null,
+
+                        proximoServicioKilometraje:
+                            newService.proximoServicioKilometraje
+                                ? Number(
+                                      newService.proximoServicioKilometraje
+                                  )
+                                : null,
+
                         kilometraje,
 
                         precio,
@@ -902,6 +989,21 @@ const filteredServices = useMemo(() => {
                                 .fechaEntregaEstimada ||
                             null,
 
+                        proximoServicio:
+                            newService.proximoServicio.trim() ||
+                            null,
+
+                        proximoServicioFecha:
+                            newService.proximoServicioFecha ||
+                            null,
+
+                        proximoServicioKilometraje:
+                            newService.proximoServicioKilometraje
+                                ? Number(
+                                      newService.proximoServicioKilometraje
+                                  )
+                                : null,
+
                         kilometraje,
 
                         precio,
@@ -1036,6 +1138,9 @@ const filteredServices = useMemo(() => {
             precio: "",
             estado: "En proceso",
             observaciones: "",
+            proximoServicio: "",
+            proximoServicioFecha: "",
+            proximoServicioKilometraje: "",
         });
     };
 
@@ -1071,49 +1176,49 @@ const filteredServices = useMemo(() => {
                 service
             );
 
-            setNewService({
-                vehiculoId:
-                    service.vehiculoId,
+setNewService({
+    vehiculoId: service.vehiculoId,
 
-                tipo:
-                    service.tipo,
+    tipo: service.tipo,
 
-                categoria:
-                    service.categoria,
+    categoria: service.categoria,
 
-                descripcion:
-                    service.descripcion,
+    descripcion: service.descripcion,
 
-                fecha:
-                    getInputDate(
-                        service.fecha
-                    ),
+    fecha: getInputDate(service.fecha),
 
-                fechaEntregaEstimada:
-                    getInputDate(
-                        service.fechaEntregaEstimada
-                    ),
+    fechaEntregaEstimada: getInputDate(
+        service.fechaEntregaEstimada
+    ),
 
-                kilometraje:
-                    service.kilometraje
-                        ? String(
-                              service.kilometraje
-                          )
-                        : "",
+    kilometraje: service.kilometraje
+        ? String(service.kilometraje)
+        : "",
 
-                precio:
-                    service.precio
-                        ? String(
-                              service.precio
-                          )
-                        : "",
+    precio: service.precio
+        ? String(service.precio)
+        : "",
 
-                estado:
-                    service.estado,
+    estado: service.estado,
 
-                observaciones:
-                    service.observaciones,
-            });
+    observaciones: service.observaciones,
+
+    // PRÓXIMO SERVICIO
+    proximoServicio:
+        service.proximoServicio ?? "",
+
+    proximoServicioFecha:
+        getInputDate(
+            service.proximoServicioFecha
+        ),
+
+    proximoServicioKilometraje:
+        service.proximoServicioKilometraje != null
+            ? String(
+                  service.proximoServicioKilometraje
+              )
+            : "",
+});
 
             setShowModal(true);
         };
@@ -1528,25 +1633,29 @@ const filteredServices = useMemo(() => {
 
                                                 <div className="flex items-center gap-3">
 
-                                                    {service.imagenUrl ? (
-                                                        <img
-                                                            src={
-                                                                service.imagenUrl
-                                                            }
-                                                            alt={
-                                                                service.vehiculoNombre
-                                                            }
-                                                            className="h-12 w-16 rounded-xl border border-slate-200 bg-slate-100 object-contain"
-                                                        />
-                                                    ) : (
-                                                        <div className="flex h-12 w-16 items-center justify-center rounded-xl bg-slate-100 text-slate-400">
-                                                            <Car
-                                                                size={
-                                                                    22
-                                                                }
+                                                    <div className="relative flex h-12 w-16 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-slate-100 text-slate-400">
+                                                        <Car size={22} />
+                                                        {service.imagenUrl && (
+                                                            <img
+                                                                src={service.imagenUrl}
+                                                                alt={service.vehiculoNombre}
+                                                                loading="lazy"
+                                                                onError={(event) => {
+                                                                    const fallbackUrl = service.imagenVehiculoUrl;
+                                                                    if (
+                                                                        fallbackUrl &&
+                                                                        event.currentTarget.dataset.fallbackTried !== "true"
+                                                                    ) {
+                                                                        event.currentTarget.dataset.fallbackTried = "true";
+                                                                        event.currentTarget.src = fallbackUrl;
+                                                                    } else {
+                                                                        event.currentTarget.style.display = "none";
+                                                                    }
+                                                                }}
+                                                                className="absolute inset-0 h-full w-full rounded-xl bg-slate-100 object-contain"
                                                             />
-                                                        </div>
-                                                    )}
+                                                        )}
+                                                    </div>
 
                                                     <div className="min-w-0">
 
@@ -2334,6 +2443,111 @@ const filteredServices = useMemo(() => {
 
                             </div>
 
+                            {/* PRÓXIMO SERVICIO */}
+
+<div className="mt-6 rounded-2xl border border-blue-100 bg-blue-50/50 p-5">
+
+    <div className="mb-4">
+        <p className="text-sm font-bold text-slate-900">
+            Próximo servicio
+        </p>
+
+        <p className="mt-1 text-xs text-slate-500">
+            Esta información se mostrará al cliente
+            en su dashboard.
+        </p>
+    </div>
+
+    <div className="grid gap-4 sm:grid-cols-2">
+
+        {/* SERVICIO */}
+
+        <div className="sm:col-span-2">
+
+            <label className="mb-1.5 block text-xs font-semibold text-slate-600">
+                Servicio recomendado
+            </label>
+
+            <input
+                type="text"
+                value={newService.proximoServicio}
+                onChange={(e) =>
+                    setNewService((prev) => ({
+                        ...prev,
+                        proximoServicio:
+                            e.target.value,
+                    }))
+                }
+                placeholder="Ej. Cambio de aceite y filtros"
+                className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+            />
+
+        </div>
+
+        {/* FECHA */}
+
+        <div>
+
+            <label className="mb-1.5 block text-xs font-semibold text-slate-600">
+                Fecha recomendada
+            </label>
+
+            <input
+                type="date"
+                value={
+                    newService.proximoServicioFecha
+                }
+                onChange={(e) =>
+                    setNewService((prev) => ({
+                        ...prev,
+                        proximoServicioFecha:
+                            e.target.value,
+                    }))
+                }
+                className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+            />
+
+        </div>
+
+        {/* KILOMETRAJE */}
+
+        <div>
+
+            <label className="mb-1.5 block text-xs font-semibold text-slate-600">
+                Kilometraje recomendado
+            </label>
+
+<input
+    type="text"
+    inputMode="numeric"
+    value={
+        newService.proximoServicioKilometraje
+            ? Number(
+                  newService.proximoServicioKilometraje
+              ).toLocaleString("es-AR")
+            : ""
+    }
+    onChange={(e) => {
+        const value = e.target.value
+            .replace(/\./g, "")
+            .replace(/\D/g, "");
+
+        setNewService((prev) => ({
+            ...prev,
+            proximoServicioKilometraje: value,
+        }));
+    }}
+    placeholder="Ej. 150.000"
+    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+/>
+
+        </div>
+
+    </div>
+
+</div>
+
+
                             {/* INFO */}
 
                             <div className="flex items-start gap-3 rounded-xl border border-blue-100 bg-blue-50 p-4">
@@ -2568,25 +2782,28 @@ const filteredServices = useMemo(() => {
 
                                 <div className="flex items-center gap-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
 
-                                    {selectedService.imagenUrl ? (
-                                        <img
-                                            src={
-                                                selectedService.imagenUrl
-                                            }
-                                            alt={
-                                                selectedService.vehiculoNombre
-                                            }
-                                            className="h-20 w-28 rounded-xl border border-slate-200 bg-white object-contain"
-                                        />
-                                    ) : (
-                                        <div className="flex h-20 w-28 items-center justify-center rounded-xl bg-white text-slate-400">
-                                            <Car
-                                                size={
-                                                    28
-                                                }
+                                    <div className="relative flex h-20 w-28 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-400">
+                                        <Car size={28} />
+                                        {selectedService.imagenUrl && (
+                                            <img
+                                                src={selectedService.imagenUrl}
+                                                alt={selectedService.vehiculoNombre}
+                                                onError={(event) => {
+                                                    const fallbackUrl = selectedService.imagenVehiculoUrl;
+                                                    if (
+                                                        fallbackUrl &&
+                                                        event.currentTarget.dataset.fallbackTried !== "true"
+                                                    ) {
+                                                        event.currentTarget.dataset.fallbackTried = "true";
+                                                        event.currentTarget.src = fallbackUrl;
+                                                    } else {
+                                                        event.currentTarget.style.display = "none";
+                                                    }
+                                                }}
+                                                className="absolute inset-0 h-full w-full rounded-xl bg-white object-contain"
                                             />
-                                        </div>
-                                    )}
+                                        )}
+                                    </div>
 
                                     <div className="min-w-0 flex-1">
 
@@ -2761,6 +2978,105 @@ const filteredServices = useMemo(() => {
                                         }
                                     </p>
 
+                                </div>
+
+                                
+
+                                <div className="mt-4 rounded-xl border border-slate-200 p-4">
+                                    <div className="flex flex-wrap items-start justify-between gap-3">
+                                        <div>
+                                            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                                                Presupuesto
+                                            </p>
+                                            <p className="mt-1 text-sm text-slate-500">
+                                                Mano de obra: {formatPrice(selectedService.manoObra ?? selectedService.precio)}
+                                                <span className="mx-2">·</span>
+                                                Repuestos: {formatPrice(selectedService.costoRepuestos ?? 0)}
+                                            </p>
+                                            <p className="mt-1 text-xs text-slate-500">
+                                                {selectedService.clientePagaRepuestosDirectamente == null
+                                                    ? "Forma de pago de repuestos sin especificar"
+                                                    : selectedService.clientePagaRepuestosDirectamente
+                                                      ? "El cliente paga los repuestos directamente al proveedor"
+                                                      : "Los repuestos se cobran en el taller"}
+                                            </p>
+                                        </div>
+
+                                        <p className="text-base font-bold text-slate-900">
+                                            Total presupuesto: {formatPrice(selectedService.presupuestoTotal ?? selectedService.precio)}
+                                            <span className="mt-1 block text-xs font-medium text-slate-500">
+                                                A cobrar en el taller: {formatPrice(selectedService.precio)}
+                                            </span>
+                                        </p>
+                                    </div>
+
+                                    {selectedService.presupuestoValidoHasta && (
+                                        <p className="mt-2 text-xs text-slate-500">
+                                            Válido hasta: {formatDate(selectedService.presupuestoValidoHasta)}
+                                        </p>
+                                    )}
+
+                                    <div className="mt-4 overflow-x-auto rounded-lg border border-slate-100">
+                                        <div className="grid min-w-[480px] grid-cols-[minmax(0,1fr)_70px_110px_110px] gap-3 bg-slate-50 px-3 py-2 text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                                            <span>Concepto</span>
+                                            <span className="text-right">Cant.</span>
+                                            <span className="text-right">Precio</span>
+                                            <span className="text-right">Subtotal</span>
+                                        </div>
+
+                                        {selectedService.presupuestoItems?.length ? (
+                                            selectedService.presupuestoItems.map(
+                                                (item, index) => (
+                                                    <div
+                                                        key={`${item.name}-${index}`}
+                                                        className="grid min-w-[480px] grid-cols-[minmax(0,1fr)_70px_110px_110px] gap-3 border-t border-slate-100 px-3 py-2.5 text-sm text-slate-700"
+                                                    >
+                                                        <span className="min-w-0 break-words">
+                                                            <span className="mr-2 text-xs text-slate-400">
+                                                                {item.type}
+                                                            </span>
+                                                            {item.name}
+                                                        </span>
+                                                        <span className="text-right">
+                                                            {item.quantity}
+                                                        </span>
+                                                        <span className="text-right">
+                                                            {formatPrice(item.price)}
+                                                        </span>
+                                                        <span className="text-right font-semibold">
+                                                            {formatPrice(item.quantity * item.price)}
+                                                        </span>
+                                                    </div>
+                                                )
+                                            )
+                                        ) : (
+                                            <p className="border-t border-slate-100 px-3 py-3 text-sm text-slate-500">
+                                                Este servicio no tiene conceptos de presupuesto guardados.
+                                            </p>
+                                        )}
+                                    </div>
+
+                                    {selectedService.presupuestoObservaciones && (
+                                        <div className="mt-4">
+                                            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                                                Notas del presupuesto
+                                            </p>
+                                            <p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-slate-600">
+                                                {selectedService.presupuestoObservaciones}
+                                            </p>
+                                        </div>
+                                    )}
+
+                                    {selectedService.pdfRepuestosUrl && (
+                                        <a
+                                            href={selectedService.pdfRepuestosUrl}
+                                            target="_blank"
+                                            rel="noreferrer"
+                                            className="mt-4 inline-flex text-sm font-semibold text-blue-700 hover:underline"
+                                        >
+                                            Ver PDF de repuestos
+                                        </a>
+                                    )}
                                 </div>
 
                             </div>

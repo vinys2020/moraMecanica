@@ -13,13 +13,14 @@ import {
 } from "lucide-react";
 
 import {
-  addDoc,
-  collection,
-  doc,
-  getDoc,
-  getDocs,
-  serverTimestamp,
-} from "firebase/firestore";
+    addDoc,
+    collection,
+    doc,
+    getDoc,
+    getDocs,
+    onSnapshot,
+    serverTimestamp,
+} from "firebase/firestore";    
 
 import { useAuth } from "../context/AuthContext";
 import { db } from "../config/firebase";
@@ -57,8 +58,13 @@ interface Vehicle {
     kilometraje: number;
     clienteId: string | null;
     clienteNombre: string;
+
     ultimoServicio: any;
-    proximoServicio: any;
+
+    proximoServicio: string | null;
+    proximoServicioFecha?: string | null;
+    proximoServicioKilometraje?: number | null;
+
     estado: "Activo" | "En taller" | "Inactivo";
     observaciones: string;
     creadoEn: any;
@@ -82,6 +88,9 @@ interface Service {
         | "En proceso"
         | "Completado"
         | "Cancelado";
+    proximoServicio?: string | null;
+    proximoServicioFecha?: string | null;
+    proximoServicioKilometraje?: number | null;
     observaciones: string;
     creadoEn: any;
 }
@@ -169,6 +178,8 @@ function ClientDashboard() {
         const [activeInfoModal, setActiveInfoModal] = useState<
     "turnos" | "vehiculos" | "presupuestos" | "pagos" | null
 >(null);
+
+
 
     const [vehicles, setVehicles] =
         useState<Vehicle[]>([]);
@@ -357,12 +368,23 @@ const [savingAppointment, setSavingAppointment] =
                                 null,
 
                             proximoServicio:
-                                data.proximoServicio ??
-                                null,
+    data.proximoServicio ??
+    null,
 
-                            estado:
-                                data.estado ??
-                                "Activo",
+proximoServicioFecha:
+    data.proximoServicioFecha ??
+    null,
+
+proximoServicioKilometraje:
+    data.proximoServicioKilometraje != null
+        ? Number(
+              data.proximoServicioKilometraje
+          )
+        : null,
+
+estado:
+    data.estado ??
+    "Activo",
 
                             observaciones:
                                 data.observaciones ??
@@ -383,6 +405,9 @@ const [savingAppointment, setSavingAppointment] =
                     });
 
             setVehicles(clientVehicles);
+
+
+            
 
             /* =====================================================
                SERVICIOS
@@ -450,6 +475,19 @@ const [savingAppointment, setSavingAppointment] =
                             estado:
                                 data.estado ??
                                 "Pendiente",
+
+                            proximoServicio:
+                                data.proximoServicio ??
+                                null,
+
+                            proximoServicioFecha:
+                                data.proximoServicioFecha ??
+                                null,
+
+                            proximoServicioKilometraje:
+                                data.proximoServicioKilometraje != null
+                                    ? Number(data.proximoServicioKilometraje)
+                                    : null,
 
                             observaciones:
                                 data.observaciones ??
@@ -1093,6 +1131,118 @@ useEffect(() => {
     cargarConfiguracionAgenda();
 }, [user]);
 
+useEffect(() => {
+    if (!user?.uid) return;
+
+    const uid = user.uid;
+
+    const unsubscribeVehicles = onSnapshot(
+        collection(db, "vehiculos"),
+        (snapshot) => {
+            const clientVehicles = snapshot.docs
+                .filter((document) => {
+                    const data = document.data();
+
+                    return (
+                        data.clienteId === uid ||
+                        data.usuarioId === uid
+                    );
+                })
+                .map((document) => {
+                    const data = document.data();
+
+                    return {
+                        id: document.id,
+
+                        marca:
+                            data.marca ?? "",
+
+                        modelo:
+                            data.modelo ?? "",
+
+                        anio:
+                            Number(
+                                data.anio ?? 0
+                            ),
+
+                        patente:
+                            data.patente ??
+                            data.matricula ??
+                            "",
+
+                        matricula:
+                            data.matricula ??
+                            "",
+
+                        color:
+                            data.color ?? "",
+
+                        kilometraje:
+                            Number(
+                                data.kilometraje ?? 0
+                            ),
+
+                        clienteId:
+                            data.clienteId ??
+                            data.usuarioId ??
+                            null,
+
+                        clienteNombre:
+                            data.clienteNombre ??
+                            "",
+
+                        ultimoServicio:
+                            data.ultimoServicio ??
+                            null,
+
+                        proximoServicio:
+                            data.proximoServicio ??
+                            null,
+
+                        proximoServicioFecha:
+                            data.proximoServicioFecha ??
+                            null,
+
+                        proximoServicioKilometraje:
+                            data.proximoServicioKilometraje != null
+                                ? Number(
+                                      data.proximoServicioKilometraje
+                                  )
+                                : null,
+
+                        estado:
+                            data.estado ??
+                            "Activo",
+
+                        observaciones:
+                            data.observaciones ??
+                            "",
+
+                        creadoEn:
+                            data.creadoEn ??
+                            null,
+
+                        imagenUrl:
+                            data.imagenUrl ??
+                            "",
+
+                        imagenPath:
+                            data.imagenPath ??
+                            "",
+                    } as Vehicle;
+                });
+
+            setVehicles(clientVehicles);
+        }
+    );
+
+    return () => {
+        unsubscribeVehicles();
+    };
+}, [user?.uid]);
+
+
+
 /* ============================================================
    HELPERS DE TURNOS
 ============================================================ */
@@ -1524,6 +1674,30 @@ const availableAppointmentSlots =
     const latestServices =
         services.slice(0, 5);
 
+    const activeService =
+        services.find(
+            (service) =>
+                service.vehiculoId === vehicle?.id &&
+                service.estado !== "Completado" &&
+                service.estado !== "Cancelado"
+        ) ?? null;
+
+    const lastCompletedService =
+        services.find(
+            (service) =>
+                service.vehiculoId === vehicle?.id &&
+                service.estado === "Completado"
+        ) ?? null;
+
+    const nextServiceDetails =
+        services.find(
+            (service) =>
+                service.vehiculoId === vehicle?.id &&
+                (service.proximoServicio ||
+                    service.proximoServicioFecha ||
+                    service.proximoServicioKilometraje != null)
+        ) ?? null;
+
     /* ============================================================
        PRESUPUESTOS PENDIENTES
     ============================================================ */
@@ -1555,19 +1729,32 @@ const availableAppointmentSlots =
     ============================================================ */
 
     const ultimoServicioTexto =
-        vehicle
-            ? formatDate(
-                  vehicle.ultimoServicio
-              )
-            : latestServices[0]
-            ? formatDate(
-                  latestServices[0].fecha
-              )
+        lastCompletedService
+            ? `${lastCompletedService.tipo || lastCompletedService.descripcion || "Servicio"} · ${formatDate(lastCompletedService.fecha)}`
+            : vehicle?.ultimoServicio
+            ? formatDate(vehicle.ultimoServicio)
             : "Sin registrar";
 
-    const proximoServicioTexto =
-        formatDate(
-            vehicle?.proximoServicio
+    const proximoServicioNombre =
+        nextServiceDetails?.proximoServicio ||
+        vehicle?.proximoServicio ||
+        "";
+
+    const proximoServicioFecha =
+        nextServiceDetails?.proximoServicioFecha ||
+        vehicle?.proximoServicioFecha ||
+        null;
+
+    const proximoServicioKilometraje =
+        nextServiceDetails?.proximoServicioKilometraje ??
+        vehicle?.proximoServicioKilometraje ??
+        null;
+
+    const tieneProximoServicio =
+        Boolean(
+            proximoServicioNombre ||
+                proximoServicioFecha ||
+                proximoServicioKilometraje != null
         );
 
     /* ============================================================
@@ -1807,8 +1994,10 @@ const availableAppointmentSlots =
                                 </div>
 
                                 <p className="mt-3 text-sm leading-6 text-white/40">
-                                    {vehicle.observaciones ||
-                                        "No hay observaciones registradas para tu vehículo."}
+                                    {activeService
+                                        ? `Estamos trabajando en ello${activeService.tipo ? ` con tu servicio de ${activeService.tipo}` : ""}.`
+                                        : vehicle.observaciones ||
+                                          "No hay observaciones registradas para tu vehículo."}
                                 </p>
 
                                 <div className="mt-8 rounded-2xl border border-white/[0.06] bg-white/[0.025] p-4">
@@ -1825,8 +2014,30 @@ const availableAppointmentSlots =
                                     </div>
 
                                     <p className="mt-2 text-sm font-semibold">
-                                        {proximoServicioTexto}
+                                        {proximoServicioNombre ||
+                                            (tieneProximoServicio
+                                                ? "Próximo service"
+                                                : "Estamos trabajando en ello")}
                                     </p>
+
+                                    {proximoServicioFecha && (
+                                        <p className="mt-1 text-xs text-white/45">
+                                            Fecha recomendada:{" "}
+                                            {formatShortDate(
+                                                proximoServicioFecha
+                                            )}
+                                        </p>
+                                    )}
+
+                                    {proximoServicioKilometraje != null && (
+                                        <p className="mt-1 text-xs text-white/45">
+                                            Kilometraje recomendado:{" "}
+                                            {proximoServicioKilometraje.toLocaleString(
+                                                "es-AR"
+                                            )}{" "}
+                                            km
+                                        </p>
+                                    )}
 
                                 </div>
                             </div>
@@ -2159,7 +2370,10 @@ const availableAppointmentSlots =
                                         : "bg-orange-500/10 text-orange-400"
                                 }`}
                             >
-                                {service.estado}
+                                {service.estado === "Completado" ||
+                                service.estado === "Cancelado"
+                                    ? service.estado
+                                    : "Estamos trabajando en ello"}
                             </span>
 
                         </div>
@@ -2272,8 +2486,10 @@ const availableAppointmentSlots =
                                             : "text-orange-400"
                                     }`}
                                 >
-                                    {service.estado ||
-                                        "Sin estado"}
+                                    {service.estado === "Completado" ||
+                                    service.estado === "Cancelado"
+                                        ? service.estado
+                                        : "Estamos trabajando en ello"}
                                 </p>
 
                             </div>

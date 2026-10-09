@@ -227,7 +227,7 @@ const ModalGeneral = ({
     */
 
     const [generateBudget, setGenerateBudget] =
-        useState(false);
+        useState(true);
 
     /*
     |--------------------------------------------------------------------------
@@ -369,7 +369,10 @@ const [partsPdf, setPartsPdf] =
 const [budgetPartsCost, setBudgetPartsCost] =
     useState("");
 
-const [budgetValidUntil, setBudgetValidUntil] =
+const [clientePagaRepuestosDirectamente, setClientePagaRepuestosDirectamente] =
+    useState(false);
+
+const [budgetValidUntil] =
     useState("");
 
 const [budgetNotes, setBudgetNotes] =
@@ -441,6 +444,12 @@ const laborCost =
 
 const budgetTotal =
     laborCost + partsCost;
+
+const servicePriceToCollect =
+    laborCost +
+    (clientePagaRepuestosDirectamente
+        ? 0
+        : partsCost);
 
 
 
@@ -909,6 +918,13 @@ const budgetTotal =
                 return;
             }
 
+            if (advanceAmount > servicePriceToCollect) {
+                alert(
+                    "El anticipo no puede superar el importe a cobrar en el taller."
+                );
+                return;
+            }
+
             if (
                 !advancePayment.medioPago
             ) {
@@ -1277,7 +1293,32 @@ const budgetTotal =
                             serviceKilometraje,
 
                         precio:
-                            servicePrecio,
+                            servicePriceToCollect,
+
+                        presupuestoItems:
+                            budgetItems.filter(
+                                (item) => item.name.trim()
+                            ),
+
+                        manoObra:
+                            laborCost,
+
+                        costoRepuestos:
+                            partsCost,
+
+                        presupuestoTotal:
+                            budgetTotal,
+
+                        clientePagaRepuestosDirectamente,
+
+                        presupuestoObservaciones:
+                            budgetNotes,
+
+                        presupuestoValidoHasta:
+                            budgetValidUntil || null,
+
+                        pdfRepuestosUrl:
+                            "",
 
                         estado:
                             newService.estado,
@@ -1294,6 +1335,30 @@ const budgetTotal =
                     }
                 );
 
+            if (partsPdf) {
+                const partsPdfRef = ref(
+                    storage,
+                    `servicios/${serviceRef.id}/presupuesto-repuestos.pdf`
+                );
+
+                await uploadBytes(
+                    partsPdfRef,
+                    partsPdf,
+                    {
+                        contentType: "application/pdf",
+                    }
+                );
+
+                const pdfRepuestosUrl = await getDownloadURL(
+                    partsPdfRef
+                );
+
+                await updateDoc(
+                    doc(db, "servicios", serviceRef.id),
+                    { pdfRepuestosUrl }
+                );
+            }
+
             /*
             |--------------------------------------------------------------------------
             | 5. CREAR PAGO
@@ -1307,6 +1372,17 @@ const budgetTotal =
                     Number(
                         advancePayment.importe
                     );
+
+                const advancePartsCollected =
+                    clientePagaRepuestosDirectamente
+                        ? 0
+                        : Math.min(
+                              partsCost,
+                              Math.max(
+                                  paymentImporte - laborCost,
+                                  0
+                              )
+                          );
 
                 const paymentRef =
                     await addDoc(
@@ -1337,6 +1413,13 @@ const budgetTotal =
 
                             monto:
                                 paymentImporte,
+
+                            manoObraCobrada:
+                                paymentImporte -
+                                advancePartsCollected,
+
+                            repuestosCobrados:
+                                advancePartsCollected,
 
                             medioPago:
                                 advancePayment.medioPago,
@@ -1405,7 +1488,7 @@ const budgetTotal =
                                 serviceKilometraje,
 
                             precioServicio:
-                                servicePrecio,
+                                servicePriceToCollect,
 
                             montoPagado:
                                 paymentImporte,
@@ -1415,7 +1498,7 @@ const budgetTotal =
 
                             saldoRestante:
                                 Math.max(
-                                    servicePrecio -
+                                    servicePriceToCollect -
                                         paymentImporte,
                                     0
                                 ),
@@ -1431,6 +1514,34 @@ const budgetTotal =
                         }
                     );
                 }
+            }
+
+            if (generateReceipt && !hasAdvancePayment) {
+                const reciboNumero = `REC-${Date.now()}`;
+
+                await addDoc(
+                    collection(db, "recibos"),
+                    {
+                        reciboNumero,
+                        servicioId: serviceRef.id,
+                        pagoId: null,
+                        fechaPago: getTodayInputDate(),
+                        clienteNombre: editClient.nombre.trim() || "Sin nombre",
+                        vehiculoNombre: `${vehicleData.marca} ${vehicleData.modelo}`.trim(),
+                        patente: vehicleData.patente || "",
+                        servicioTipo: newService.tipo.trim(),
+                        categoria: newService.categoria,
+                        descripcion: newService.descripcion.trim(),
+                        kilometraje: serviceKilometraje,
+                        precioServicio: servicePriceToCollect,
+                        montoPagado: 0,
+                        saldoAnterior: servicePriceToCollect,
+                        saldoRestante: servicePriceToCollect,
+                        medioPago: "Sin pago",
+                        observaciones: budgetNotes.trim() || newService.observaciones.trim(),
+                        creadoEn: serverTimestamp(),
+                    }
+                );
             }
 
             /*
@@ -1597,6 +1708,12 @@ const budgetTotal =
 
         onClose();
     };
+
+    useEffect(() => {
+    if (hasAdvancePayment) {
+        setGenerateReceipt(true);
+    }
+}, [hasAdvancePayment]);
     
 
     return (
@@ -2189,20 +2306,26 @@ const budgetTotal =
                                     />
 
                                     <input
-                                        type="number"
-                                        min="0"
-                                        value={
-                                            newVehicle.kilometraje
-                                        }
-                                        onChange={(e) =>
-                                            handleNewVehicleChange(
-                                                "kilometraje",
-                                                e.target.value
-                                            )
-                                        }
-                                        placeholder="Ej. 85000"
-                                        className="w-full rounded-xl border border-slate-200 py-3 pl-10 pr-4 text-sm text-slate-700 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10"
-                                    />
+    type="text"
+    inputMode="numeric"
+    value={
+        newVehicle.kilometraje
+            ? Number(newVehicle.kilometraje).toLocaleString("es-AR")
+            : ""
+    }
+    onChange={(e) => {
+        const value = e.target.value
+            .replace(/\./g, "")
+            .replace(/\D/g, "");
+
+        handleNewVehicleChange(
+            "kilometraje",
+            value
+        );
+    }}
+    placeholder="Ej. 85.000"
+    className="w-full rounded-xl border border-slate-200 py-3 pl-10 pr-4 text-sm text-slate-700 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10"
+/>
 
                                 </div>
                             </div>
@@ -2488,45 +2611,7 @@ const budgetTotal =
                     </div>
 
 
-                    {/* KM */}
 
-                    <div>
-
-                        <label className="mb-2 block text-sm font-semibold text-slate-700">
-                            Kilometraje
-                        </label>
-
-                        <div className="relative">
-
-                            <Gauge
-                                size={16}
-                                className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
-                            />
-
-<input
-    type="text"
-    inputMode="numeric"
-    value={
-        newService.kilometraje
-            ? Number(newService.kilometraje).toLocaleString("es-AR")
-            : ""
-    }
-    onChange={(e) => {
-        const value = e.target.value
-            .replace(/\./g, "")
-            .replace(/\D/g, "");
-
-        handleServiceChange(
-            "kilometraje",
-            value
-        );
-    }}
-    className="w-full rounded-xl border border-slate-200 py-3 pl-10 pr-4 text-sm text-slate-700 outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10"
-/>
-
-                        </div>
-
-                    </div>
 
 
                     {/* IMPORTE */}
@@ -2965,7 +3050,7 @@ const budgetTotal =
                         </h3>
 
                         <p className="text-xs text-slate-500">
-                            Configurá si querés generar un  para este servicio.
+                            Configurá si querés generar un presupuesto para este servicio.
                         </p>
                     </div>
 
@@ -3009,8 +3094,8 @@ const budgetTotal =
 
                             <p className="mt-1 text-xs text-slate-500">
                                 {generateBudget
-                                    ? "Sí, se generará un  para el servicio."
-                                    : "No se generará ningún ."}
+                                    ? "Sí, se generará un presupuesto para el servicio."
+                                    : "No se generará ningún presupuesto."}
                             </p>
 
                         </div>
@@ -3285,6 +3370,28 @@ const budgetTotal =
         </div>
 
 
+        <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-slate-200 bg-white p-4">
+            <input
+                type="checkbox"
+                checked={clientePagaRepuestosDirectamente}
+                onChange={(event) =>
+                    setClientePagaRepuestosDirectamente(
+                        event.target.checked
+                    )
+                }
+                className="mt-0.5 h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+            />
+            <span>
+                <span className="block text-sm font-semibold text-slate-800">
+                    El cliente paga los repuestos directamente al proveedor
+                </span>
+                <span className="mt-1 block text-xs leading-5 text-slate-500">
+                    Si se marca, los repuestos no se suman al saldo que cobrará el taller.
+                </span>
+            </span>
+        </label>
+
+
         {/* ================================================= */}
         {/* CONCEPTOS */}
         {/* ================================================= */}
@@ -3448,28 +3555,7 @@ const budgetTotal =
         </div>
 
 
-        {/* ================================================= */}
-        {/* VIGENCIA */}
-        {/* ================================================= */}
-
-        <div>
-
-            <label className="mb-2 block text-xs font-semibold text-slate-700">
-                 válido hasta
-            </label>
-
-            <input
-                type="date"
-                value={budgetValidUntil}
-                onChange={(e) =>
-                    setBudgetValidUntil(
-                        e.target.value
-                    )
-                }
-                className="text-slate-700 w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10"
-            />
-
-        </div>
+    
 
 
         {/* ================================================= */}
@@ -3504,6 +3590,15 @@ const budgetTotal =
                 )}
             </p>
 
+        </div>
+
+        <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-4 py-3">
+            <span className="text-sm font-semibold text-slate-700">
+                A cobrar en el taller
+            </span>
+            <span className="text-base font-bold text-slate-900">
+                {formatCurrency(servicePriceToCollect)}
+            </span>
         </div>
 
 
@@ -3543,8 +3638,7 @@ const budgetTotal =
         {/* 6. RECIBO */}
         {/* ================================================= */}
 
-        {hasAdvancePayment && (
-            <section className="rounded-2xl border border-slate-200 bg-white">
+        <section className="rounded-2xl border border-slate-200 bg-white">
 
                 <div className="border-b border-slate-100 px-5 py-4">
 
@@ -3561,7 +3655,7 @@ const budgetTotal =
                             </h3>
 
                             <p className="text-xs text-slate-500">
-                                Configurá si querés emitir un recibo por el pago registrado.
+                                La opción está desactivada por defecto para utilizar en caso de adelanto de pago.
                             </p>
 
                         </div>
@@ -3606,7 +3700,9 @@ const budgetTotal =
 
                                 <p className="mt-1 text-xs text-slate-500">
                                     {generateReceipt
-                                        ? "Sí, se emitirá un recibo por el anticipo."
+                                        ? hasAdvancePayment
+                                            ? "Se emitirá un recibo por el anticipo registrado."
+                                            : "Se emitirá un recibo con el total pendiente y sin pagos registrados."
                                         : "No se generará ningún recibo."}
                                 </p>
 
@@ -3665,37 +3761,8 @@ const budgetTotal =
                 </div>
 
             </section>
-        )}
 
 
-        {/* ================================================= */}
-        {/* RESUMEN */}
-        {/* ================================================= */}
-
-        <div className="rounded-2xl border border-slate-200 bg-slate-50 p-5">
-
-            <div className="flex items-start gap-3">
-
-                <FileText
-                    size={19}
-                    className="mt-0.5 text-slate-500"
-                />
-
-                <div>
-
-                    <h3 className="text-sm font-bold text-slate-800">
-                        Resumen de la operación
-                    </h3>
-
-                    <p className="mt-1 text-xs leading-5 text-slate-500">
-                        Al guardar se actualizarán los datos del cliente y el estado de acceso. También se podrá asignar o crear el vehículo y registrar el servicio correspondiente.
-                    </p>
-
-                </div>
-
-            </div>
-
-        </div>
 
     </div>
 
@@ -3708,7 +3775,7 @@ const budgetTotal =
                 <div className="flex shrink-0 flex-col gap-3 border-t border-slate-100 bg-slate-50/70 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
 
                     <p className="text-xs text-slate-400">
-                        Los cambios se guardarán en Firebase.
+                        Los cambios se guardarán en el sistema.
                     </p>
 
                     <div className="flex justify-end gap-3">

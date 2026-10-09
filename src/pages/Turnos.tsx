@@ -5,11 +5,13 @@ import {
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
+  ClipboardList,
   Clock3,
   Loader2,
   Plus,
   Search,
   Settings,
+  Trash2,
   UserRound,
   Wrench,
   X,
@@ -19,13 +21,16 @@ import {
 import {
   addDoc,
   collection,
+  deleteDoc,
   doc,
   getDoc,
   getDocs,
+  onSnapshot,
   serverTimestamp,
   setDoc,
   updateDoc,
 } from "firebase/firestore";
+import type { DocumentData } from "firebase/firestore";
 
 import {
   useEffect,
@@ -176,6 +181,111 @@ const appointmentStatuses: AppointmentStatus[] = [
   "Finalizado",
   "Cancelado",
 ];
+
+interface TimestampLike {
+  toDate: () => Date;
+}
+
+function isTimestampLike(value: unknown): value is TimestampLike {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "toDate" in value &&
+    typeof value.toDate === "function"
+  );
+}
+
+function normalizeAppointmentDate(value: unknown): string {
+  if (!value) return "";
+
+  if (typeof value === "string") {
+    const dateValue = value.trim();
+    const isoDate = dateValue.match(/^(\d{4}-\d{2}-\d{2})/);
+
+    if (isoDate) return isoDate[1];
+
+    const localDate = dateValue.match(
+      /^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/
+    );
+
+    if (localDate) {
+      return `${localDate[3]}-${localDate[2].padStart(2, "0")}-${localDate[1].padStart(2, "0")}`;
+    }
+  }
+
+  const date =
+    isTimestampLike(value)
+      ? value.toDate()
+      : value instanceof Date
+        ? value
+        : new Date(String(value));
+
+  if (Number.isNaN(date.getTime())) return "";
+
+  return dateToInput(date);
+}
+
+function normalizeAppointmentTime(value: unknown): string {
+  if (!value) return "";
+
+  if (typeof value === "string") {
+    const time = value.trim().match(/(?:T|\s)?(\d{1,2}):(\d{2})/);
+
+    if (time) {
+      return `${time[1].padStart(2, "0")}:${time[2]}`;
+    }
+  }
+
+  const date =
+    isTimestampLike(value)
+      ? value.toDate()
+      : value instanceof Date
+        ? value
+        : new Date(String(value));
+
+  if (Number.isNaN(date.getTime())) return String(value);
+
+  return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+}
+
+function mapAppointment(id: string, value: DocumentData): Appointment {
+  const rawStatus = String(
+    value.status ?? value.estado ?? "En espera"
+  ).trim();
+
+  const status =
+    appointmentStatuses.find(
+      (appointmentStatus) =>
+        appointmentStatus.toLowerCase() === rawStatus.toLowerCase()
+    ) ?? "En espera";
+
+  return {
+    id,
+    numero: String(value.numero ?? id),
+    clienteId: value.clienteId ?? value.usuarioId ?? "",
+    clienteNombre: value.clienteNombre ?? value.cliente ?? "",
+    clienteEmail: value.clienteEmail ?? value.email ?? "",
+    telefono: value.telefono ?? "",
+    vehiculoId: value.vehiculoId ?? "",
+    vehiculo: value.vehiculo ?? "",
+    patente: value.patente ?? value.matricula ?? "",
+    marca: value.marca ?? "",
+    modelo: value.modelo ?? "",
+    anio: String(value.anio ?? ""),
+    servicio: value.servicio ?? "",
+    mechanic: value.mechanic ?? value.mecanico ?? "Sin asignar",
+    date: normalizeAppointmentDate(value.date ?? value.fecha),
+    start: normalizeAppointmentTime(
+      value.start ?? value.hora ?? value.horaInicio
+    ),
+    end: normalizeAppointmentTime(
+      value.end ?? value.horaFin ?? value.horaFinalizacion
+    ),
+    status,
+    notes: value.notes ?? value.observaciones ?? "",
+    creadoEn: value.creadoEn ?? null,
+  };
+}
 
 /* ============================================================
    ESTILOS
@@ -359,7 +469,7 @@ function getWeekDays(
     getMonday(selectedDate);
 
   return Array.from(
-    { length: 6 },
+    { length: 7 },
     (_, index) => {
       const date =
         addDays(monday, index);
@@ -701,6 +811,22 @@ function Turnos() {
   ] = useState(false);
 
   const [
+    showAppointmentManager,
+    setShowAppointmentManager,
+  ] = useState(false);
+
+  const [
+    appointmentToDelete,
+    setAppointmentToDelete,
+  ] = useState<Appointment | null>(null);
+
+  const [deleteConfirmationStep, setDeleteConfirmationStep] =
+    useState<0 | 1 | 2>(0);
+
+  const [deletingAppointmentId, setDeletingAppointmentId] =
+    useState<string | null>(null);
+
+  const [
     search,
     setSearch,
   ] = useState("");
@@ -716,6 +842,9 @@ function Turnos() {
     loading,
     setLoading,
   ] = useState(true);
+
+  const [appointmentsLoaded, setAppointmentsLoaded] =
+    useState(false);
 
   const [
     saving,
@@ -770,6 +899,18 @@ function Turnos() {
         ),
       [selectedDate]
     );
+
+  const monthDays =
+    useMemo(() => {
+      const calendarStart = getMonday(
+        `${selectedDate.slice(0, 7)}-01`
+      );
+
+      return Array.from(
+        { length: 42 },
+        (_, index) => addDays(calendarStart, index)
+      );
+    }, [selectedDate]);
 
   const hours = Array.from(
     {
@@ -962,153 +1103,6 @@ function Turnos() {
     };
 
   /* ============================================================
-     CARGAR TURNOS
-  ============================================================ */
-
-  const cargarTurnos =
-    async () => {
-      const snapshot =
-        await getDocs(
-          collection(
-            db,
-            "turnos"
-          )
-        );
-
-      const data =
-        snapshot.docs.map(
-          (item) => {
-            const value =
-              item.data();
-
-            const rawStatus =
-              value.status ??
-              value.estado ??
-              "En espera";
-
-            const validStatus =
-              appointmentStatuses.includes(
-                rawStatus
-              )
-                ? rawStatus
-                : "En espera";
-
-            return {
-              id: item.id,
-
-              numero:
-                value.numero ??
-                item.id,
-
-              clienteId:
-                value.clienteId ??
-                value.usuarioId ??
-                "",
-
-              clienteNombre:
-                value.clienteNombre ??
-                value.cliente ??
-                "",
-
-              clienteEmail:
-                value.clienteEmail ??
-                value.email ??
-                "",
-
-              telefono:
-                value.telefono ??
-                "",
-
-              vehiculoId:
-                value.vehiculoId ??
-                "",
-
-              vehiculo:
-                value.vehiculo ??
-                "",
-
-              patente:
-                value.patente ??
-                "",
-
-              marca:
-                value.marca ??
-                "",
-
-              modelo:
-                value.modelo ??
-                "",
-
-              anio:
-                String(
-                  value.anio ??
-                  ""
-                ),
-
-              servicio:
-                value.servicio ??
-                "",
-
-              mechanic:
-                value.mechanic ??
-                value.mecanico ??
-                "Sin asignar",
-
-              date:
-                value.date ??
-                value.fecha ??
-                "",
-
-              start:
-                value.start ??
-                value.hora ??
-                "",
-
-              end:
-                value.end ??
-                value.horaFin ??
-                "",
-
-              status:
-                validStatus,
-
-              notes:
-                value.notes ??
-                value.observaciones ??
-                "",
-
-              creadoEn:
-                value.creadoEn ??
-                null,
-            } as Appointment;
-          }
-        );
-
-      data.sort(
-        (a, b) => {
-          const dateA =
-            `${a.date} ${a.start}`;
-
-          const dateB =
-            `${b.date} ${b.start}`;
-
-          return (
-            new Date(
-              dateA
-            ).getTime() -
-            new Date(
-              dateB
-            ).getTime()
-          );
-        }
-      );
-
-      setAppointments(
-        data
-      );
-    };
-
-  /* ============================================================
      CARGAR CONFIGURACIÓN
   ============================================================ */
 
@@ -1187,7 +1181,6 @@ function Turnos() {
         await Promise.all([
           cargarClientes(),
           cargarVehiculos(),
-          cargarTurnos(),
           cargarConfiguracionAgenda(),
         ]);
       } catch (err) {
@@ -1206,6 +1199,31 @@ function Turnos() {
 
   useEffect(() => {
     cargarDatos();
+  }, []);
+
+  useEffect(() => {
+    const unsubscribe = onSnapshot(
+      collection(db, "turnos"),
+      (snapshot) => {
+        const liveAppointments = snapshot.docs
+          .map((item) => mapAppointment(item.id, item.data()))
+          .sort((a, b) =>
+            `${a.date} ${a.start}`.localeCompare(
+              `${b.date} ${b.start}`
+            )
+          );
+
+        setAppointments(liveAppointments);
+        setAppointmentsLoaded(true);
+      },
+      (snapshotError) => {
+        console.error("Error escuchando turnos en tiempo real:", snapshotError);
+        setError("No se pudieron actualizar los turnos en tiempo real.");
+        setAppointmentsLoaded(true);
+      }
+    );
+
+    return unsubscribe;
   }, []);
 
   /* ============================================================
@@ -1375,42 +1393,46 @@ function Turnos() {
 
   const stats =
     useMemo(() => {
-      const day =
-        appointments.filter(
-          (appointment) =>
-            appointment.date ===
-            selectedDate
-        );
-
       return {
-        total:
-          day.length,
+        total: appointments.length,
 
-        confirmed:
-          day.filter(
+        confirmed: appointments.filter(
             (item) =>
               item.status ===
               "Confirmado"
           ).length,
 
-        active:
-          day.filter(
+        active: appointments.filter(
             (item) =>
               item.status ===
               "En taller"
           ).length,
 
-        pending:
-          day.filter(
+        pending: appointments.filter(
             (item) =>
               item.status ===
               "En espera"
           ).length,
       };
-    }, [
-      appointments,
-      selectedDate,
-    ]);
+    }, [appointments]);
+
+  const upcomingAppointments = useMemo(() => {
+    const today = getToday();
+
+    return appointments
+      .filter(
+        (appointment) =>
+          appointment.date >= today &&
+          appointment.status !== "Cancelado" &&
+          appointment.status !== "Finalizado"
+      )
+      .sort((a, b) =>
+        `${a.date} ${a.start}`.localeCompare(
+          `${b.date} ${b.start}`
+        )
+      )
+      .slice(0, 5);
+  }, [appointments]);
 
   /* ============================================================
      POSICIÓN DEL TURNO
@@ -1825,8 +1847,6 @@ function Turnos() {
           }
         );
 
-        await cargarTurnos();
-
         setSelectedDate(
           form.date
         );
@@ -1942,6 +1962,50 @@ function Turnos() {
       }
     };
 
+  const requestAppointmentDeletion = (
+    appointment: Appointment
+  ) => {
+    setAppointmentToDelete(appointment);
+    setDeleteConfirmationStep(1);
+    setError("");
+  };
+
+  const cancelAppointmentDeletion = () => {
+    setAppointmentToDelete(null);
+    setDeleteConfirmationStep(0);
+  };
+
+  const handleDeleteAppointment = async () => {
+    if (
+      !appointmentToDelete ||
+      deleteConfirmationStep !== 2
+    ) {
+      return;
+    }
+
+    const appointmentId = appointmentToDelete.id;
+
+    try {
+      setDeletingAppointmentId(appointmentId);
+      await deleteDoc(
+        doc(db, "turnos", appointmentId)
+      );
+
+      setAppointments((current) =>
+        current.filter((item) => item.id !== appointmentId)
+      );
+      setSelectedAppointment((current) =>
+        current?.id === appointmentId ? null : current
+      );
+      cancelAppointmentDeletion();
+    } catch (err) {
+      console.error("Error eliminando turno:", err);
+      setError("No se pudo eliminar el turno. Intentá nuevamente.");
+    } finally {
+      setDeletingAppointmentId(null);
+    }
+  };
+
   /* ============================================================
      NAVEGACIÓN SEMANA
   ============================================================ */
@@ -1954,6 +2018,7 @@ const changeWeek = (direction: number) => {
     const currentDate =
       new Date(`${selectedDate}T12:00:00`);
 
+    currentDate.setDate(1);
     currentDate.setMonth(
       currentDate.getMonth() + direction
     );
@@ -1965,7 +2030,14 @@ const changeWeek = (direction: number) => {
     ).padStart(2, "0");
 
     const day = String(
-      currentDate.getDate()
+      Math.min(
+        Number(selectedDate.slice(-2)),
+        new Date(
+          currentDate.getFullYear(),
+          currentDate.getMonth() + 1,
+          0
+        ).getDate()
+      )
     ).padStart(2, "0");
 
     setSelectedDate(
@@ -1987,7 +2059,7 @@ const changeWeek = (direction: number) => {
      LOADING
   ============================================================ */
 
-  if (loading) {
+  if (loading || !appointmentsLoaded) {
     return (
       <AdminLayout>
         <div className="flex min-h-[70vh] items-center justify-center bg-slate-50">
@@ -2061,6 +2133,18 @@ const changeWeek = (direction: number) => {
                   Disponibilidad
                 </button>
 
+                <button
+                  type="button"
+                  onClick={() => {
+                    setError("");
+                    setShowAppointmentManager(true);
+                  }}
+                  className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-bold text-slate-600 transition hover:bg-slate-50"
+                >
+                  <ClipboardList size={16} />
+                  Administrar turnos
+                </button>
+
                 {/* NUEVO TURNO */}
 
                 <button
@@ -2118,7 +2202,7 @@ const changeWeek = (direction: number) => {
           <div className="mb-5 grid grid-cols-2 gap-3 xl:grid-cols-4">
 
             <StatCard
-              label="Turnos del día"
+              label="Turnos registrados"
               value={
                 stats.total
               }
@@ -2166,6 +2250,52 @@ const changeWeek = (direction: number) => {
             />
 
           </div>
+
+          <section className="mb-5 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <div>
+                <h2 className="text-sm font-bold text-slate-900">
+                  Próximos turnos
+                </h2>
+                <p className="mt-0.5 text-xs text-slate-500">
+                  Seleccioná un turno para ubicarlo en el calendario.
+                </p>
+              </div>
+              <span className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-bold text-blue-700">
+                {upcomingAppointments.length}
+              </span>
+            </div>
+
+            {upcomingAppointments.length ? (
+              <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
+                {upcomingAppointments.map((appointment) => (
+                  <button
+                    key={appointment.id}
+                    type="button"
+                    onClick={() => {
+                      setSelectedDate(appointment.date);
+                      setCalendarView("week");
+                    }}
+                    className="rounded-xl border border-slate-200 p-3 text-left transition hover:border-blue-300 hover:bg-blue-50/50"
+                  >
+                    <span className="block text-[10px] font-bold uppercase tracking-wide text-blue-600">
+                      {formatDateShort(appointment.date)} · {appointment.start}
+                    </span>
+                    <span className="mt-1 block truncate text-sm font-bold text-slate-800">
+                      {appointment.clienteNombre || appointment.vehiculo || "Turno"}
+                    </span>
+                    <span className="mt-0.5 block truncate text-xs text-slate-500">
+                      {appointment.servicio || appointment.vehiculo || appointment.status}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <p className="rounded-xl bg-slate-50 px-3 py-4 text-center text-xs text-slate-500">
+                No hay turnos próximos sin cancelar.
+              </p>
+            )}
+          </section>
 
           {/* ===================================================
               ESTADO DISPONIBILIDAD
@@ -2252,7 +2382,12 @@ const changeWeek = (direction: number) => {
       <div className="ml-1">
 
         <p className="text-sm font-bold capitalize text-slate-900">
-          {formatDateLabel(selectedDate)}
+          {calendarView === "week"
+            ? formatDateLabel(selectedDate)
+            : new Date(`${selectedDate}T12:00:00`).toLocaleDateString(
+                "es-AR",
+                { month: "long", year: "numeric" }
+              )}
         </p>
 
         <p className="text-xs text-slate-400">
@@ -2402,15 +2537,12 @@ const changeWeek = (direction: number) => {
 
 </div>
 
-{/* =====================================================
-    CUERPO — VISTA SEMANAL
-===================================================== */}
-
+{calendarView === "week" ? (
 <div className="overflow-x-auto">
 
   <div className="min-w-[950px]">
 
-    <div className="grid grid-cols-[70px_repeat(6,minmax(145px,1fr))]">
+    <div className="grid grid-cols-[70px_repeat(7,minmax(145px,1fr))]">
 
       {/* =================================================
           COLUMNA DE HORAS
@@ -2702,6 +2834,135 @@ const changeWeek = (direction: number) => {
 
   </div>
 
+</div>
+) : (
+  <div className="overflow-x-auto">
+    <div className="min-w-[760px]">
+      <div className="grid grid-cols-7 border-b border-slate-200 bg-slate-50">
+        {["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"].map((day) => (
+          <div
+            key={day}
+            className="border-r border-slate-200 px-3 py-2 text-xs font-bold text-slate-500 last:border-r-0"
+          >
+            {day}
+          </div>
+        ))}
+      </div>
+
+      <div className="grid grid-cols-7">
+        {monthDays.map((day) => {
+          const dayAppointments = filteredAppointments.filter(
+            (appointment) => appointment.date === day
+          );
+          const isCurrentMonth = day.slice(0, 7) === selectedDate.slice(0, 7);
+          const isSelected = day === selectedDate;
+
+          return (
+            <div
+              key={day}
+              className={`min-h-32 border-b border-r border-slate-200 p-2 ${
+                isCurrentMonth ? "bg-white" : "bg-slate-50/70"
+              } ${isSelected ? "ring-2 ring-inset ring-blue-500" : ""}`}
+            >
+              <button
+                type="button"
+                onClick={() => setSelectedDate(day)}
+                className={`mb-2 flex h-7 w-7 items-center justify-center rounded-full text-xs font-semibold ${
+                  isSelected
+                    ? "bg-blue-600 text-white"
+                    : isCurrentMonth
+                      ? "text-slate-700 hover:bg-slate-100"
+                      : "text-slate-300 hover:bg-slate-100"
+                }`}
+              >
+                {Number(day.slice(-2))}
+              </button>
+
+              <div className="space-y-1">
+                {dayAppointments.slice(0, 3).map((appointment) => (
+                  <button
+                    key={appointment.id}
+                    type="button"
+                    onClick={() => setSelectedAppointment(appointment)}
+                    className={`block w-full truncate rounded px-1.5 py-1 text-left text-[10px] font-semibold ${statusStyles[appointment.status].container}`}
+                    title={`${appointment.start} · ${appointment.clienteNombre} · ${appointment.servicio}`}
+                  >
+                    <span className="font-bold">{appointment.start}</span>
+                    {" "}
+                    {appointment.clienteNombre || appointment.vehiculo || "Turno"}
+                  </button>
+                ))}
+
+                {dayAppointments.length > 3 && (
+                  <p className="px-1.5 text-[10px] font-semibold text-slate-500">
+                    +{dayAppointments.length - 3} más
+                  </p>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  </div>
+)}
+
+<div className="border-t border-slate-200 bg-slate-50/70 p-4">
+  <div className="mb-3 flex items-center justify-between gap-3">
+    <div>
+      <h2 className="text-sm font-bold text-slate-900">
+        Turnos registrados
+      </h2>
+      <p className="mt-0.5 text-xs text-slate-500">
+        Abrí una tarjeta para ver el turno y cambiar su estado.
+      </p>
+    </div>
+    <span className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-bold text-blue-700">
+      {filteredAppointments.length}
+    </span>
+  </div>
+
+  {filteredAppointments.length ? (
+    <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+      {[...filteredAppointments]
+        .sort((a, b) =>
+          `${a.date} ${a.start}`.localeCompare(`${b.date} ${b.start}`)
+        )
+        .map((appointment) => (
+          <button
+            key={appointment.id}
+            type="button"
+            onClick={() => {
+              setSelectedDate(appointment.date);
+              setSelectedAppointment(appointment);
+            }}
+            className={`rounded-xl border p-3 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md ${statusStyles[appointment.status].container}`}
+          >
+            <div className="flex items-start justify-between gap-2">
+              <span className="text-xs font-bold">
+                {formatDateShort(appointment.date)} · {appointment.start}
+                {appointment.end ? `–${appointment.end}` : ""}
+              </span>
+              <span className="shrink-0 rounded-full bg-white/70 px-2 py-0.5 text-[10px] font-bold">
+                {appointment.status}
+              </span>
+            </div>
+            <p className="mt-1 truncate text-sm font-bold">
+              {appointment.clienteNombre || appointment.vehiculo || "Turno"}
+            </p>
+            <p className="mt-0.5 truncate text-xs opacity-75">
+              {[appointment.servicio, appointment.vehiculo, appointment.patente]
+                .filter(Boolean)
+                .join(" · ") || "Sin detalles adicionales"}
+            </p>
+          </button>
+        ))}
+    </div>
+  ) : (
+    <p className="rounded-xl bg-white px-3 py-4 text-center text-xs text-slate-500">
+      No hay turnos que coincidan con los filtros.
+    </p>
+  )}
 </div>
 
           </section>
@@ -3512,6 +3773,180 @@ const changeWeek = (direction: number) => {
 
             </div>
 
+          </div>
+        )}
+
+        {/* =====================================================
+            MODAL ADMINISTRAR TURNOS
+        ===================================================== */}
+
+        {showAppointmentManager && (
+          <div
+            className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-950/50 p-4 backdrop-blur-sm"
+            onClick={() => setShowAppointmentManager(false)}
+          >
+            <div
+              className="flex max-h-[88vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <div className="flex items-center justify-between border-b border-slate-100 p-5">
+                <div>
+                  <h2 className="text-lg font-bold text-slate-950">
+                    Administrar turnos
+                  </h2>
+                  <p className="mt-1 text-sm text-slate-500">
+                    {appointments.length} turnos registrados
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowAppointmentManager(false)}
+                  className="rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                  aria-label="Cerrar listado de turnos"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+
+              {error && (
+                <div className="mx-5 mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                  {error}
+                </div>
+              )}
+
+              <div className="min-h-0 flex-1 overflow-y-auto">
+                {appointments.length === 0 ? (
+                  <p className="p-8 text-center text-sm text-slate-500">
+                    No hay turnos para mostrar.
+                  </p>
+                ) : (
+                  <div className="divide-y divide-slate-100">
+                    {[...appointments]
+                      .sort((a, b) =>
+                        `${b.date} ${b.start}`.localeCompare(
+                          `${a.date} ${a.start}`
+                        )
+                      )
+                      .map((appointment) => (
+                        <div
+                          key={appointment.id}
+                          className="flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center sm:justify-between"
+                        >
+                          <div className="min-w-0">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <p className="text-sm font-bold text-slate-900">
+                                {appointment.clienteNombre || "Sin cliente"}
+                              </p>
+                              <span
+                                className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${statusStyles[appointment.status].container}`}
+                              >
+                                {appointment.status}
+                              </span>
+                            </div>
+                            <p className="mt-1 text-sm text-slate-600">
+                              {appointment.vehiculo || "Sin vehículo"}
+                              {appointment.patente
+                                ? ` · ${appointment.patente}`
+                                : ""}
+                              {appointment.servicio
+                                ? ` · ${appointment.servicio}`
+                                : ""}
+                            </p>
+                            <p className="mt-1 text-xs text-slate-400">
+                              {formatDateShort(appointment.date)} · {appointment.start}
+                              {appointment.end ? `–${appointment.end}` : ""}
+                              {appointment.numero
+                                ? ` · ${appointment.numero}`
+                                : ""}
+                            </p>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => requestAppointmentDeletion(appointment)}
+                            className="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg border border-red-200 px-3 py-2 text-xs font-bold text-red-700 transition hover:bg-red-50"
+                          >
+                            <Trash2 size={15} />
+                            Eliminar
+                          </button>
+                        </div>
+                      ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="flex justify-end border-t border-slate-100 bg-slate-50/70 p-4">
+                <button
+                  type="button"
+                  onClick={() => setShowAppointmentManager(false)}
+                  className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-100"
+                >
+                  Cerrar
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {appointmentToDelete && deleteConfirmationStep > 0 && (
+          <div className="fixed inset-0 z-[140] flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm">
+            <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl">
+              <div className="flex items-start gap-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-red-50 text-red-600">
+                  <Trash2 size={19} />
+                </div>
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-wide text-red-600">
+                    Confirmación {deleteConfirmationStep} de 2
+                  </p>
+                  <h2 className="mt-1 text-lg font-bold text-slate-900">
+                    {deleteConfirmationStep === 1
+                      ? "¿Querés eliminar este turno?"
+                      : "Confirmá la eliminación definitiva"}
+                  </h2>
+                  <p className="mt-2 text-sm leading-6 text-slate-600">
+                    {appointmentToDelete.clienteNombre || "Sin cliente"} · {formatDateShort(appointmentToDelete.date)} · {appointmentToDelete.start}
+                  </p>
+                  <p className="mt-2 text-xs text-slate-500">
+                    {deleteConfirmationStep === 1
+                      ? "El turno dejará de aparecer en la agenda. Para continuar, confirmá una vez más."
+                      : "Esta acción no se puede deshacer."}
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-6 flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={cancelAppointmentDeletion}
+                  disabled={deletingAppointmentId !== null}
+                  className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+                >
+                  Cancelar
+                </button>
+
+                {deleteConfirmationStep === 1 ? (
+                  <button
+                    type="button"
+                    onClick={() => setDeleteConfirmationStep(2)}
+                    className="rounded-xl bg-red-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-red-700"
+                  >
+                    Continuar
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={handleDeleteAppointment}
+                    disabled={deletingAppointmentId !== null}
+                    className="rounded-xl bg-red-600 px-4 py-2.5 text-sm font-bold text-white hover:bg-red-700 disabled:cursor-wait disabled:opacity-60"
+                  >
+                    {deletingAppointmentId
+                      ? "Eliminando..."
+                      : "Eliminar definitivamente"}
+                  </button>
+                )}
+              </div>
+            </div>
           </div>
         )}
 

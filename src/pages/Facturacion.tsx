@@ -71,6 +71,10 @@ interface Service {
     estado: ServiceStatus;
     observaciones: string;
     creadoEn: any;
+    manoObra?: number;
+    costoRepuestos?: number;
+    presupuestoTotal?: number;
+    clientePagaRepuestosDirectamente?: boolean;
 }
 
 interface Payment {
@@ -86,6 +90,8 @@ interface Payment {
     fecha: any;
     observaciones: string;
     creadoEn: any;
+    manoObraCobrada?: number;
+    repuestosCobrados?: number;
 }
 
 interface BillingService extends Service {
@@ -456,6 +462,12 @@ const [selectedBillingMonth, setSelectedBillingMonth] =
                             creadoEn:
                                 data.creadoEn ??
                                 null,
+
+                            manoObraCobrada:
+                                Number(data.manoObraCobrada) || 0,
+
+                            repuestosCobrados:
+                                Number(data.repuestosCobrados) || 0,
                         };
                     }
                 );
@@ -522,6 +534,24 @@ const [selectedBillingMonth, setSelectedBillingMonth] =
                                 Number(
                                     data.precio
                                 ) || 0,
+
+                            manoObra:
+                                data.manoObra == null
+                                    ? undefined
+                                    : Number(data.manoObra) || 0,
+
+                            costoRepuestos:
+                                data.costoRepuestos == null
+                                    ? undefined
+                                    : Number(data.costoRepuestos) || 0,
+
+                            presupuestoTotal:
+                                data.presupuestoTotal == null
+                                    ? undefined
+                                    : Number(data.presupuestoTotal) || 0,
+
+                            clientePagaRepuestosDirectamente:
+                                data.clientePagaRepuestosDirectamente === true,
 
                             estado:
                                 normalizeServiceStatus(
@@ -1237,6 +1267,37 @@ const [selectedBillingMonth, setSelectedBillingMonth] =
                 return;
             }
 
+            const servicePayments = payments.filter(
+                (item) => item.servicioId === selectedService.id
+            );
+            const paidPartsBefore = servicePayments.reduce(
+                (sum, item) => sum + (item.repuestosCobrados ?? 0),
+                0
+            );
+            const laborCost =
+                selectedService.manoObra ?? selectedService.precio;
+            const partsCost = selectedService.costoRepuestos ?? 0;
+            const laborPaidBefore = Math.max(
+                selectedService.pagado - paidPartsBefore,
+                0
+            );
+            const laborRemaining = Math.max(
+                laborCost - laborPaidBefore,
+                0
+            );
+            const partsRemaining = Math.max(
+                partsCost - paidPartsBefore,
+                0
+            );
+            const repuestosCobrados =
+                selectedService.clientePagaRepuestosDirectamente
+                    ? 0
+                    : Math.min(
+                          partsRemaining,
+                          Math.max(amount - laborRemaining, 0)
+                      );
+            const manoObraCobrada = amount - repuestosCobrados;
+
             try {
                 setSavingPayment(
                     true
@@ -1270,6 +1331,10 @@ const [selectedBillingMonth, setSelectedBillingMonth] =
 
                             monto:
                                 amount,
+
+                            manoObraCobrada,
+
+                            repuestosCobrados,
 
                             medioPago:
                                 paymentMethod,
@@ -1311,6 +1376,10 @@ const [selectedBillingMonth, setSelectedBillingMonth] =
 
                         monto:
                             amount,
+
+                        manoObraCobrada,
+
+                        repuestosCobrados,
 
                         medioPago:
                             paymentMethod,

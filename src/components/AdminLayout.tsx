@@ -35,19 +35,14 @@ const menuItems = [
         path: "/admin/clientes",
     },
     {
-        title: "Vehículos",
-        icon: Car,
-        path: "/admin/vehiculos",
-    },
-    {
         title: "Servicios",
         icon: Wrench,
         path: "/admin/servicios",
     },
-    {
-        title: "Facturación",
-        icon: CircleDollarSign,
-        path: "/admin/facturacion",
+        {
+        title: "Vehículos",
+        icon: Car,
+        path: "/admin/vehiculos",
     },
     {
         title: "Turnos",
@@ -58,6 +53,11 @@ const menuItems = [
         title: "Presupuestos",
         icon: FileText,
         path: "/admin/presupuestos",
+    },
+        {
+        title: "Facturación",
+        icon: CircleDollarSign,
+        path: "/admin/facturacion",
     },
     {
         title: "Balance",

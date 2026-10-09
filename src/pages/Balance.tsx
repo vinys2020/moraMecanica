@@ -19,7 +19,10 @@ import {
     deleteDoc,
     doc,
     getDocs,
+    query,
     serverTimestamp,
+    where,
+    writeBatch,
 } from "firebase/firestore";
 
 import {
@@ -61,9 +64,11 @@ interface Payment {
     vehiculoNombre: string;
     patente: string;
     monto: number;
+    manoObraCobrada: number;
     medioPago: PaymentMethod;
     fecha: any;
     observaciones: string;
+    repuestosCobrados: number;
 }
 
 interface Expense {
@@ -424,6 +429,15 @@ const [periodFilter, setPeriodFilter] =
                                     0
                                 ),
 
+                            manoObraCobrada:
+                                data.manoObraCobrada == null
+                                    ? Math.max(
+                                          Number(data.monto ?? data.importe ?? 0) -
+                                              Number(data.repuestosCobrados ?? 0),
+                                          0
+                                      )
+                                    : Number(data.manoObraCobrada) || 0,
+
                             medioPago:
                                 normalizePaymentMethod(
                                     data.medioPago
@@ -436,6 +450,9 @@ const [periodFilter, setPeriodFilter] =
                             observaciones:
                                 data.observaciones ??
                                 "",
+
+                            repuestosCobrados:
+                                Number(data.repuestosCobrados) || 0,
                         };
                     }
                 );
@@ -765,6 +782,30 @@ const [periodFilter, setPeriodFilter] =
             0
         );
 
+    const partsCollected =
+        filteredPayments.reduce(
+            (sum, payment) =>
+                sum + payment.repuestosCobrados,
+            0
+        );
+
+    const partsExpenses =
+        filteredExpenses
+            .filter((expense) => expense.categoria === "Repuestos")
+            .reduce((sum, expense) => sum + expense.monto, 0);
+
+    const partsFunds = Math.max(
+        partsCollected - partsExpenses,
+        0
+    );
+
+    const laborFunds =
+        filteredPayments.reduce(
+            (sum, payment) =>
+                sum + payment.manoObraCobrada,
+            0
+        );
+
 
     const balance =
         totalIncome -
@@ -1059,49 +1100,57 @@ const [periodFilter, setPeriodFilter] =
                     true
                 );
 
+                if (movementToDelete.tipo === "Ingreso") {
+                    const relatedReceipts = await getDocs(
+                        query(
+                            collection(db, "recibos"),
+                            where("pagoId", "==", movementToDelete.firestoreId)
+                        )
+                    );
 
-                const collectionName =
-                    movementToDelete.tipo ===
-                        "Ingreso"
-                        ? "pagos"
-                        : "gastos";
+                    if (relatedReceipts.size > 499) {
+                        throw new Error(
+                            "El pago tiene demasiados recibos asociados para eliminarlos en una sola operación."
+                        );
+                    }
 
+                    const batch = writeBatch(db);
+                    relatedReceipts.docs.forEach((receipt) => {
+                        batch.delete(receipt.ref);
+                    });
+                    batch.delete(
+                        doc(db, "pagos", movementToDelete.firestoreId)
+                    );
+
+                    await batch.commit();
+
+                    setPayments((current) =>
+                        current.filter(
+                            (payment) =>
+                                payment.id !== movementToDelete.firestoreId
+                        )
+                    );
+                    setMovementToDelete(null);
+                    return;
+                }
 
                 await deleteDoc(
                     doc(
                         db,
-                        collectionName,
+                        "gastos",
                         movementToDelete.firestoreId
                     )
                 );
 
 
-                if (
-                    movementToDelete.tipo ===
-                    "Ingreso"
-                ) {
-
-                    setPayments(
-                        (current) =>
-                            current.filter(
-                                (payment) =>
-                                    payment.id !==
-                                    movementToDelete.firestoreId
-                            )
-                    );
-
-                } else {
-
-                    setExpenses(
-                        (current) =>
-                            current.filter(
-                                (expense) =>
-                                    expense.id !==
-                                    movementToDelete.firestoreId
-                            )
-                    );
-                }
-
+                setExpenses(
+                    (current) =>
+                        current.filter(
+                            (expense) =>
+                                expense.id !==
+                                movementToDelete.firestoreId
+                        )
+                );
 
                 setMovementToDelete(
                     null
@@ -1237,7 +1286,7 @@ const periodDescription = (() => {
                     {/* SUMMARY */}
                     {/* ================================================= */}
 
-                    <section className="grid gap-4 md:grid-cols-3">
+                    <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
 
                         {/* INGRESOS */}
 
@@ -1272,6 +1321,50 @@ const periodDescription = (() => {
 
                             </div>
 
+                        </div>
+
+
+                        {/* FONDOS PARA REPUESTOS */}
+
+                        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5 shadow-sm">
+                            <div className="flex items-start justify-between">
+                                <div>
+                                    <p className="text-sm font-medium text-amber-900">
+                                        Fondos para repuestos
+                                    </p>
+                                    <p className="mt-2 text-2xl font-black text-amber-950">
+                                        {formatCurrency(partsFunds)}
+                                    </p>
+                                    <p className="mt-1 text-xs text-amber-800">
+                                        Cobrado menos gastos de repuestos registrados
+                                    </p>
+                                </div>
+                                <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-white text-amber-700">
+                                    <Receipt size={21} />
+                                </div>
+                            </div>
+                        </div>
+
+
+                        {/* MANO DE OBRA */}
+
+                        <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-5 shadow-sm">
+                            <div className="flex items-start justify-between">
+                                <div>
+                                    <p className="text-sm font-medium text-emerald-900">
+                                        Mano de obra
+                                    </p>
+                                    <p className="mt-2 text-2xl font-black text-emerald-950">
+                                        {formatCurrency(laborFunds)}
+                                    </p>
+                                    <p className="mt-1 text-xs text-emerald-800">
+                                        Cobrado por el taller en el período
+                                    </p>
+                                </div>
+                                <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-white text-emerald-700">
+                                    <CircleDollarSign size={21} />
+                                </div>
+                            </div>
                         </div>
 
 

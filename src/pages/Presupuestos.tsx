@@ -25,6 +25,7 @@ import {
     deleteDoc,
     doc,
     serverTimestamp,
+    updateDoc,
 } from "firebase/firestore";
 
 import {
@@ -133,6 +134,9 @@ const Presupuestos = () => {
     useState<Budget | null>(null);
 
     const [saving, setSaving] = useState(false);
+
+    const [updatingBudgetId, setUpdatingBudgetId] =
+        useState<string | null>(null);
 
     const [clients, setClients] = useState<Client[]>([]);
 
@@ -1332,6 +1336,37 @@ const blob =
     }
 };
 
+const handleApproveBudget = async (budget: Budget) => {
+    if (!budget.firestoreId || budget.status !== "Pendiente") {
+        return;
+    }
+
+    try {
+        setUpdatingBudgetId(budget.firestoreId);
+
+        await updateDoc(
+            doc(db, "presupuestos", budget.firestoreId),
+            {
+                estado: "Aprobado",
+                actualizadoEn: serverTimestamp(),
+            }
+        );
+
+        setBudgets((current) =>
+            current.map((item) =>
+                item.firestoreId === budget.firestoreId
+                    ? { ...item, status: "Aprobado" }
+                    : item
+            )
+        );
+    } catch (error) {
+        console.error("Error aprobando presupuesto:", error);
+        alert("No se pudo aprobar el presupuesto.");
+    } finally {
+        setUpdatingBudgetId(null);
+    }
+};
+
 const handleSendWhatsApp = async (
     budget: Budget
 ) => {
@@ -1940,6 +1975,21 @@ Muchas gracias por confiar en *Mora Mecánica.*`;
                                                     <td className="px-5 py-4">
 
 <div className="flex items-center gap-1">
+
+    {budget.status === "Pendiente" && (
+        <button
+            type="button"
+            onClick={() => handleApproveBudget(budget)}
+            disabled={updatingBudgetId === budget.firestoreId}
+            className="flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-50 disabled:cursor-wait disabled:opacity-50"
+            title="Aprobar presupuesto"
+        >
+            <CheckCircle2 size={17} />
+            {updatingBudgetId === budget.firestoreId
+                ? "Aprobando..."
+                : "Aprobar"}
+        </button>
+    )}
 
     <button
         type="button"
