@@ -32,7 +32,8 @@ import {
 } from "firebase/functions";
 
 import { useEffect, useMemo, useState } from "react";
-
+import { Plus } from "lucide-react";
+import CrearClienteQRModal from "../components/CrearClienteQRModal";
 import AdminLayout from "../components/AdminLayout";
 import { db, app } from "../config/firebase";
 import ModalGeneral from "../components/ModalGeneral";
@@ -68,6 +69,9 @@ type StatusFilter = "Todos" | "Activo" | "Inactivo";
 const Clientes = () => {
     const [users, setUsers] = useState<UserData[]>([]);
     const [vehicles, setVehicles] = useState<Vehicle[]>([]);
+
+    const [showCreateClientModal, setShowCreateClientModal] =
+  useState(false);
 
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 const [deleting, setDeleting] = useState(false);
@@ -769,6 +773,15 @@ const handleDeleteUser = async () => {
                             Administrá usuarios, estados y vehículos del taller.
                         </p>
                     </div>
+
+                                    <button
+  type="button"
+  onClick={() => setShowCreateClientModal(true)}
+  className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700"
+>
+  <Plus size={18} />
+  Agregar cliente
+</button>
                 </div>
 
                 {/* STATS */}
@@ -806,6 +819,8 @@ const handleDeleteUser = async () => {
                         );
                     })}
                 </div>
+
+
 
                 {/* CLIENTS */}
                 <section className="mt-7 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
@@ -1929,6 +1944,15 @@ const handleDeleteUser = async () => {
                         }}
                     />
                 )}
+
+                {showCreateClientModal && (
+  <CrearClienteQRModal
+    onClose={() => setShowCreateClientModal(false)}
+    onCreated={() => {
+      void cargarUsuarios();
+    }}
+  />
+)}
         </AdminLayout>
     );
 };

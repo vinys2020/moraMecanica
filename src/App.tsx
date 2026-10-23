@@ -21,6 +21,7 @@ import RegistroPendiente from './pages/RegistroPendiente'
 import { useAuth } from './context/AuthContext'
 import ClienteRoute from './routes/ClienteRoute'
 import Balance from './pages/Balance'
+import AccesoQR from './pages/AccesoQR'
 
 function App() {
   const { user, rol, loading } = useAuth()
@@ -45,6 +46,14 @@ function App() {
           path="/"
           element={<Home />}
         />
+
+
+        {/* ACCESO DIRECTO POR QR */}
+
+<Route
+  path="/acceso-qr"
+  element={<AccesoQR />}
+/>
 
         {/* LOGIN */}
 
@@ -85,6 +94,7 @@ function App() {
             )
           }
         />
+
 
         {/* TURNOS */}
 

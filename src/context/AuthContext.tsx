@@ -1,4 +1,3 @@
-
 import {
   createContext,
   useContext,
@@ -10,6 +9,7 @@ import {
 
 import {
   onAuthStateChanged,
+  signInWithCustomToken,
   type User as FirebaseUser,
 } from 'firebase/auth'
 
@@ -38,6 +38,9 @@ interface AuthContextType {
     rol: UserRole | null
     activo: boolean
   }>
+
+  // NUEVO: inicio de sesión mediante QR validado por Firebase
+  loginWithQR: (customToken: string) => Promise<void>
 
   logout: () => Promise<void>
 }
@@ -78,9 +81,8 @@ export function AuthProvider({
       onAuthStateChanged(
         auth,
         async (currentUser) => {
-
           /*
-           * Si login() está trabajando,
+           * Si login() o loginWithQR() está trabajando,
            * no interferimos.
            */
           if (loginInProgress.current) {
@@ -125,29 +127,29 @@ export function AuthProvider({
                SIN DOCUMENTO
             ------------------------- */
 
-if (!data) {
-  console.warn(
-    `⚠️ No existe usuarios/${currentUser.uid} todavía.`
-  )
+            if (!data) {
+              console.warn(
+                `⚠️ No existe usuarios/${currentUser.uid} todavía.`
+              )
 
-  setUser(currentUser)
-  setUserData(null)
-  setRol(null)
+              setUser(currentUser)
+              setUserData(null)
+              setRol(null)
 
-  return
-}
+              return
+            }
 
             /* -------------------------
                CUENTA INACTIVA
             ------------------------- */
 
-if (data.activo !== true) {
-  setUser(currentUser)
-  setUserData(data)
-  setRol(data.rol ?? null)
+            if (data.activo !== true) {
+              setUser(currentUser)
+              setUserData(data)
+              setRol(data.rol ?? null)
 
-  return
-}
+              return
+            }
 
             /* -------------------------
                CUENTA ACTIVA
@@ -164,7 +166,6 @@ if (data.activo !== true) {
                 activo: data.activo,
               }
             )
-
           } catch (error) {
             console.error(
               '❌ Error verificando sesión:',
@@ -174,7 +175,6 @@ if (data.activo !== true) {
             setUser(null)
             setUserData(null)
             setRol(null)
-
           } finally {
             setLoading(false)
           }
@@ -185,7 +185,7 @@ if (data.activo !== true) {
   }, [])
 
   /* =========================================================
-     LOGIN
+     LOGIN CON EMAIL Y CONTRASEÑA
   ========================================================= */
 
   const login = async (
@@ -244,14 +244,76 @@ if (data.activo !== true) {
        */
 
       return result
-
     } catch (error) {
       setUser(null)
       setUserData(null)
       setRol(null)
 
       throw error
+    } finally {
+      loginInProgress.current = false
+      setLoading(false)
+    }
+  }
 
+  /* =========================================================
+     NUEVO: LOGIN MEDIANTE QR
+  ========================================================= */
+
+  const loginWithQR = async (
+    customToken: string
+  ): Promise<void> => {
+    loginInProgress.current = true
+
+    try {
+      setLoading(true)
+
+      // El customToken debe venir de la Cloud Function
+      // después de validar el QR de un solo uso.
+      const credential =
+        await signInWithCustomToken(
+          auth,
+          customToken
+        )
+
+      const currentUser = credential.user
+
+      const data =
+        await obtenerDatosUsuario(
+          currentUser.uid
+        )
+
+      if (!data) {
+        throw new Error(
+          'No se encontraron los datos del cliente.'
+        )
+      }
+
+      setUser(currentUser)
+      setUserData(data)
+      setRol(data.rol ?? null)
+
+      if (data.activo !== true) {
+        throw new Error(
+          'La cuenta del cliente está inactiva.'
+        )
+      }
+
+      console.log(
+        '✅ LOGIN POR QR',
+        {
+          uid: currentUser.uid,
+          rol: data.rol,
+          activo: data.activo,
+        }
+      )
+    } catch (error) {
+      console.error(
+        '❌ Error en login por QR:',
+        error
+      )
+
+      throw error
     } finally {
       loginInProgress.current = false
       setLoading(false)
@@ -275,17 +337,18 @@ if (data.activo !== true) {
   ========================================================= */
 
   return (
-<AuthContext.Provider
-  value={{
-    user,
-    userData,
-    rol,
-    activo: userData?.activo === true,
-    loading,
-    login,
-    logout,
-  }}
->
+    <AuthContext.Provider
+      value={{
+        user,
+        userData,
+        rol,
+        activo: userData?.activo === true,
+        loading,
+        login,
+        loginWithQR,
+        logout,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   )
@@ -307,4 +370,3 @@ export function useAuth() {
 
   return context
 }
-
